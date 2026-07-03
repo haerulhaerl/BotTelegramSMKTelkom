@@ -1,4 +1,10 @@
-const { BOT_TOKEN, ADMIN_CHAT_ID, ADMIN_UID, SUPABASE_URL, SUPABASE_SERVICE_KEY } = require("./config");
+const {
+  BOT_TOKEN,
+  ADMIN_CHAT_ID,
+  ADMIN_UID,
+  SUPABASE_URL,
+  SUPABASE_SERVICE_KEY,
+} = require("./config");
 const TelegramBot = require("node-telegram-bot-api");
 const { v4: uuidv4 } = require("uuid");
 const { db } = require("./firebase");
@@ -37,12 +43,17 @@ function tampilkanMenu(chatId) {
 }
 
 // ─── KIRIM NOTIFIKASI FCM KE SEMUA SISWA ─────────────────────
+// Lokasi: Ganti baris 40 - 58 di index.js
+// GANTI SELURUH BLOK FUNGSI INI
 async function kirimNotifikasiRekomendasi(judul, instansi) {
   try {
     const message = {
       notification: {
         title: "📢 Rekomendasi Baru!",
         body: `${judul} dari ${instansi} — Cek sekarang!`,
+      },
+      data: {
+        TIPE_NOTIFIKASI: "REKOMENDASI_BARU",
       },
       topic: "siswa",
     };
@@ -367,6 +378,7 @@ bot.on("message", async (msg) => {
       bot.sendMessage(chatId, "⚠️ Nomor tidak valid. Coba lagi.");
       return;
     }
+
     const dipilih = daftar[nomorDipilih - 1];
     sesi[chatId].data.hapusDipilih = dipilih;
     sesi[chatId].tahap = "konfirmasi_hapus";
@@ -579,6 +591,9 @@ db.collection("notifikasi")
           if (title) {
             await admin.messaging().send({
               notification: { title, body },
+              data: {
+                TIPE_NOTIFIKASI: data.tipe,
+              },
               topic: "siswa",
             });
             console.log(`✅ Notifikasi kuesioner terkirim: ${data.judul}`);
