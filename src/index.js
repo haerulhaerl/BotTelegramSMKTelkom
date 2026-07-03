@@ -16,7 +16,7 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 const ws = require("ws");
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  realtime: { transport: ws }
+  realtime: { transport: ws },
 });
 
 // ─── STATE PERCAKAPAN ────────────────────────────────────────
@@ -50,9 +50,9 @@ async function kirimNotifikasiRekomendasi(judul, instansi) {
     const message = {
       notification: {
         title: "📢 Rekomendasi Baru!",
-        body: `${judul} dari ${instansi} — Cek sekarang!`
+        body: `${judul} dari ${instansi} — Cek sekarang!`,
       },
-      topic: "siswa"
+      topic: "siswa",
     };
     const response = await admin.messaging().send(message);
     console.log("✅ Notifikasi FCM terkirim:", response);
@@ -91,13 +91,20 @@ async function uploadFotoKeSupabase(fileId) {
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   if (!isAdmin(chatId)) {
-    bot.sendMessage(chatId, "⛔ Maaf, bot ini hanya untuk admin Tracer Study SMK Telkom.");
+    bot.sendMessage(
+      chatId,
+      "⛔ Maaf, bot ini hanya untuk admin Tracer Study SMK Telkom.",
+    );
     return;
   }
   resetSesi(chatId);
-  bot.sendMessage(chatId, `👋 Halo, *Admin SMK Telkom*!\n\nSelamat datang di bot Tracer Study.`, {
-    parse_mode: "Markdown",
-  });
+  bot.sendMessage(
+    chatId,
+    `👋 Halo, *Admin SMK Telkom*!\n\nSelamat datang di bot Tracer Study.`,
+    {
+      parse_mode: "Markdown",
+    },
+  );
   tampilkanMenu(chatId);
 });
 
@@ -115,7 +122,10 @@ bot.on("photo", async (msg) => {
     const imageUrl = await uploadFotoKeSupabase(foto.file_id);
 
     if (!imageUrl) {
-      bot.sendMessage(chatId, "❌ Gagal upload foto. Coba lagi atau ketik `-` untuk skip.");
+      bot.sendMessage(
+        chatId,
+        "❌ Gagal upload foto. Coba lagi atau ketik `-` untuk skip.",
+      );
       return;
     }
 
@@ -145,10 +155,17 @@ bot.on("message", async (msg) => {
   if (teks === "➕ Tambah Rekomendasi") {
     resetSesi(chatId);
     sesi[chatId].tahap = "judul";
-    bot.sendMessage(chatId, "📝 *Tambah Rekomendasi Baru*\n\nMasukkan *judul* rekomendasi:", {
-      parse_mode: "Markdown",
-      reply_markup: { keyboard: [[{ text: "❌ Batal" }]], resize_keyboard: true },
-    });
+    bot.sendMessage(
+      chatId,
+      "📝 *Tambah Rekomendasi Baru*\n\nMasukkan *judul* rekomendasi:",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          keyboard: [[{ text: "❌ Batal" }]],
+          resize_keyboard: true,
+        },
+      },
+    );
     return;
   }
 
@@ -175,7 +192,10 @@ bot.on("message", async (msg) => {
     sesi[chatId].tahap = "instansi";
     bot.sendMessage(chatId, "🏢 Masukkan *nama instansi/perusahaan*:", {
       parse_mode: "Markdown",
-      reply_markup: { keyboard: [[{ text: "❌ Batal" }]], resize_keyboard: true },
+      reply_markup: {
+        keyboard: [[{ text: "❌ Batal" }]],
+        resize_keyboard: true,
+      },
     });
     return;
   }
@@ -199,25 +219,42 @@ bot.on("message", async (msg) => {
   if (tahap === "jenis") {
     const jenisValid = ["MAGANG", "PEKERJAAN", "BEASISWA"];
     if (!jenisValid.includes(teks)) {
-      bot.sendMessage(chatId, "⚠️ Pilih salah satu: MAGANG, PEKERJAAN, atau BEASISWA");
+      bot.sendMessage(
+        chatId,
+        "⚠️ Pilih salah satu: MAGANG, PEKERJAAN, atau BEASISWA",
+      );
       return;
     }
     sesi[chatId].data.jenis = teks;
     sesi[chatId].tahap = "lokasi";
-    bot.sendMessage(chatId, "📍 Masukkan *lokasi*:\n\nKetik `-` jika tidak ada.", {
-      parse_mode: "Markdown",
-      reply_markup: { keyboard: [[{ text: "❌ Batal" }]], resize_keyboard: true },
-    });
+    bot.sendMessage(
+      chatId,
+      "📍 Masukkan *lokasi*:\n\nKetik `-` jika tidak ada.",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          keyboard: [[{ text: "❌ Batal" }]],
+          resize_keyboard: true,
+        },
+      },
+    );
     return;
   }
 
   if (tahap === "lokasi") {
     sesi[chatId].data.lokasi = teks === "-" ? "" : teks;
     sesi[chatId].tahap = "deskripsi";
-    bot.sendMessage(chatId, "📄 Masukkan *deskripsi* singkat:\n\nKetik `-` jika tidak ada.", {
-      parse_mode: "Markdown",
-      reply_markup: { keyboard: [[{ text: "❌ Batal" }]], resize_keyboard: true },
-    });
+    bot.sendMessage(
+      chatId,
+      "📄 Masukkan *deskripsi* singkat:\n\nKetik `-` jika tidak ada.",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          keyboard: [[{ text: "❌ Batal" }]],
+          resize_keyboard: true,
+        },
+      },
+    );
     return;
   }
 
@@ -229,38 +266,57 @@ bot.on("message", async (msg) => {
       "🎓 Masukkan *target jurusan* (pisah dengan koma):\nContoh: `RPL, TKJ, PERHOTELAN`\n\nKetik `-` untuk semua jurusan.",
       {
         parse_mode: "Markdown",
-        reply_markup: { keyboard: [[{ text: "❌ Batal" }]], resize_keyboard: true },
-      }
+        reply_markup: {
+          keyboard: [[{ text: "❌ Batal" }]],
+          resize_keyboard: true,
+        },
+      },
     );
     return;
   }
 
   if (tahap === "targetJurusan") {
     sesi[chatId].data.targetJurusan =
-      teks === "-" ? [] : teks.split(",").map((s) => s.trim()).filter(Boolean);
+      teks === "-"
+        ? []
+        : teks
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
     sesi[chatId].tahap = "targetKeahlian";
     bot.sendMessage(
       chatId,
       "💡 Masukkan *target keahlian* (pisah dengan koma):\nContoh: `JavaScript, React`\n\nKetik `-` jika tidak ada.",
       {
         parse_mode: "Markdown",
-        reply_markup: { keyboard: [[{ text: "❌ Batal" }]], resize_keyboard: true },
-      }
+        reply_markup: {
+          keyboard: [[{ text: "❌ Batal" }]],
+          resize_keyboard: true,
+        },
+      },
     );
     return;
   }
 
   if (tahap === "targetKeahlian") {
     sesi[chatId].data.targetKeahlian =
-      teks === "-" ? [] : teks.split(",").map((s) => s.trim()).filter(Boolean);
+      teks === "-"
+        ? []
+        : teks
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
     sesi[chatId].tahap = "link";
     bot.sendMessage(
       chatId,
       "🔗 Masukkan *link pendaftaran / info lengkap*:\nContoh: `https://google.com`\n\nKetik `-` jika tidak ada.",
       {
         parse_mode: "Markdown",
-        reply_markup: { keyboard: [[{ text: "❌ Batal" }]], resize_keyboard: true },
-      }
+        reply_markup: {
+          keyboard: [[{ text: "❌ Batal" }]],
+          resize_keyboard: true,
+        },
+      },
     );
     return;
   }
@@ -273,8 +329,11 @@ bot.on("message", async (msg) => {
       "🖼️ Kirim *foto* untuk rekomendasi ini:\n\nKetik `-` jika tidak ada foto.",
       {
         parse_mode: "Markdown",
-        reply_markup: { keyboard: [[{ text: "-" }], [{ text: "❌ Batal" }]], resize_keyboard: true },
-      }
+        reply_markup: {
+          keyboard: [[{ text: "-" }], [{ text: "❌ Batal" }]],
+          resize_keyboard: true,
+        },
+      },
     );
     return;
   }
@@ -284,7 +343,10 @@ bot.on("message", async (msg) => {
       sesi[chatId].data.imageUrl = "";
       await lanjutKeKonfirmasi(chatId);
     } else {
-      bot.sendMessage(chatId, "⚠️ Kirim foto langsung (bukan teks), atau ketik `-` untuk skip.");
+      bot.sendMessage(
+        chatId,
+        "⚠️ Kirim foto langsung (bukan teks), atau ketik `-` untuk skip.",
+      );
     }
     return;
   }
@@ -305,7 +367,11 @@ bot.on("message", async (msg) => {
   if (tahap === "pilih_hapus") {
     const nomorDipilih = parseInt(teks);
     const daftar = sesi[chatId].data.daftarHapus;
-    if (isNaN(nomorDipilih) || nomorDipilih < 1 || nomorDipilih > daftar.length) {
+    if (
+      isNaN(nomorDipilih) ||
+      nomorDipilih < 1 ||
+      nomorDipilih > daftar.length
+    ) {
       bot.sendMessage(chatId, "⚠️ Nomor tidak valid. Coba lagi.");
       return;
     }
@@ -321,7 +387,7 @@ bot.on("message", async (msg) => {
           keyboard: [[{ text: "✅ Ya, Hapus" }, { text: "❌ Batal" }]],
           resize_keyboard: true,
         },
-      }
+      },
     );
     return;
   }
@@ -375,22 +441,25 @@ async function simpanRekomendasi(chatId) {
     const d = sesi[chatId].data;
     const id = uuidv4().replace(/-/g, "").substring(0, 20);
 
-    await db.collection("rekomendasi").doc(id).set({
-      id,
-      judul: d.judul,
-      instansi: d.instansi,
-      jenis: d.jenis,
-      lokasi: d.lokasi || "",
-      deskripsi: d.deskripsi || "",
-      imageUrl: d.imageUrl || "",
-      link: d.link || "",
-      targetJurusan: d.targetJurusan || [],
-      targetKeahlian: d.targetKeahlian || [],
-      targetMinat: [],
-      deadline: null,
-      createdBy: ADMIN_UID,
-      createdAt: Date.now(),
-    });
+    await db
+      .collection("rekomendasi")
+      .doc(id)
+      .set({
+        id,
+        judul: d.judul,
+        instansi: d.instansi,
+        jenis: d.jenis,
+        lokasi: d.lokasi || "",
+        deskripsi: d.deskripsi || "",
+        imageUrl: d.imageUrl || "",
+        link: d.link || "",
+        targetJurusan: d.targetJurusan || [],
+        targetKeahlian: d.targetKeahlian || [],
+        targetMinat: [],
+        deadline: null,
+        createdBy: ADMIN_UID,
+        createdAt: Date.now(),
+      });
 
     // ─── KIRIM NOTIFIKASI FCM ─────────────────────────────
     await kirimNotifikasiRekomendasi(d.judul, d.instansi);
@@ -399,7 +468,7 @@ async function simpanRekomendasi(chatId) {
     bot.sendMessage(
       chatId,
       `✅ *Rekomendasi berhasil disimpan!*\n\n"${d.judul}" dari ${d.instansi} sudah muncul di aplikasi siswa dan notifikasi telah dikirim. 🔔`,
-      { parse_mode: "Markdown" }
+      { parse_mode: "Markdown" },
     );
     tampilkanMenu(chatId);
   } catch (error) {
@@ -413,7 +482,11 @@ async function simpanRekomendasi(chatId) {
 async function tampilkanDaftarRekomendasi(chatId) {
   try {
     bot.sendMessage(chatId, "⏳ Mengambil data...");
-    const snapshot = await db.collection("rekomendasi").orderBy("createdAt", "desc").limit(10).get();
+    const snapshot = await db
+      .collection("rekomendasi")
+      .orderBy("createdAt", "desc")
+      .limit(10)
+      .get();
 
     if (snapshot.empty) {
       bot.sendMessage(chatId, "📭 Belum ada rekomendasi.");
@@ -422,7 +495,7 @@ async function tampilkanDaftarRekomendasi(chatId) {
     }
 
     let pesan = "📋 *Daftar Rekomendasi (10 terbaru):*\n\n";
-    snapshot.forEach((doc, index) => {
+    snapshot.docs.forEach((doc, index) => {
       const r = doc.data();
       pesan += `${index + 1}. *${r.judul}*\n   🏢 ${r.instansi} | 📌 ${r.jenis} ${r.imageUrl ? "🖼️" : ""}\n\n`;
     });
@@ -440,7 +513,11 @@ async function tampilkanDaftarRekomendasi(chatId) {
 async function mulaiHapusRekomendasi(chatId) {
   try {
     bot.sendMessage(chatId, "⏳ Mengambil data...");
-    const snapshot = await db.collection("rekomendasi").orderBy("createdAt", "desc").limit(10).get();
+    const snapshot = await db
+      .collection("rekomendasi")
+      .orderBy("createdAt", "desc")
+      .limit(10)
+      .get();
 
     if (snapshot.empty) {
       bot.sendMessage(chatId, "📭 Belum ada rekomendasi.");
@@ -462,7 +539,10 @@ async function mulaiHapusRekomendasi(chatId) {
 
     bot.sendMessage(chatId, pesan, {
       parse_mode: "Markdown",
-      reply_markup: { keyboard: [[{ text: "❌ Batal" }]], resize_keyboard: true },
+      reply_markup: {
+        keyboard: [[{ text: "❌ Batal" }]],
+        resize_keyboard: true,
+      },
     });
   } catch (error) {
     console.error("Error hapus:", error);
@@ -476,7 +556,9 @@ async function hapusRekomendasi(chatId) {
     const { id, judul } = sesi[chatId].data.hapusDipilih;
     await db.collection("rekomendasi").doc(id).delete();
     resetSesi(chatId);
-    bot.sendMessage(chatId, `✅ *"${judul}"* berhasil dihapus.`, { parse_mode: "Markdown" });
+    bot.sendMessage(chatId, `✅ *"${judul}"* berhasil dihapus.`, {
+      parse_mode: "Markdown",
+    });
     tampilkanMenu(chatId);
   } catch (error) {
     console.error("Error hapus:", error);
@@ -492,7 +574,7 @@ db.collection("notifikasi")
     for (const change of snapshot.docChanges()) {
       if (change.type === "added") {
         const data = change.doc.data();
-        
+
         try {
           let title = "";
           let body = "";
@@ -505,16 +587,16 @@ db.collection("notifikasi")
           if (title) {
             await admin.messaging().send({
               notification: { title, body },
-              topic: "siswa"
+              topic: "siswa",
             });
             console.log(`✅ Notifikasi kuesioner terkirim: ${data.judul}`);
           }
 
           // Tandai sudah dikirim
-          await db.collection("notifikasi")
+          await db
+            .collection("notifikasi")
             .doc(change.doc.id)
             .update({ sudahDikirim: true });
-
         } catch (error) {
           console.error("❌ Gagal kirim notifikasi kuesioner:", error);
         }
