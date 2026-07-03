@@ -1,18 +1,10 @@
-require("dotenv").config();
+const { BOT_TOKEN, ADMIN_CHAT_ID, ADMIN_UID, SUPABASE_URL, SUPABASE_SERVICE_KEY } = require("./config");
 const TelegramBot = require("node-telegram-bot-api");
 const { v4: uuidv4 } = require("uuid");
 const { db } = require("./firebase");
 const { createClient } = require("@supabase/supabase-js");
 const axios = require("axios");
 const admin = require("firebase-admin");
-
-// ─── KONFIGURASI ────────────────────────────────────────────
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
-const ADMIN_UID = process.env.ADMIN_UID;
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 const ws = require("ws");
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
