@@ -1,0 +1,18 @@
+{
+  "name": "tracerstudy-bot",
+  "version": "1.0.0",
+  "description": "Telegram Bot untuk Tracer Study SMK Telkom",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.109.0",
+    "axios": "^1.18.1",
+    "dotenv": "^17.4.2",
+    "firebase-admin": "^12.7.0",
+    "node-telegram-bot-api": "^0.64.0",
+    "uuid": "^9.0.1",
+    "ws": "^8.21.0"
+  }
+}
