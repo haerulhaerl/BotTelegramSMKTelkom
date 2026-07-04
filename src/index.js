@@ -35,6 +35,7 @@ function tampilkanMenu(chatId) {
         [{ text: "➕ Tambah Rekomendasi" }],
         [{ text: "📋 Lihat Rekomendasi" }],
         [{ text: "🗑️ Hapus Rekomendasi" }],
+        [{ text: "🧪 Testing" }],
       ],
       resize_keyboard: true,
     },
@@ -42,8 +43,6 @@ function tampilkanMenu(chatId) {
 }
 
 // ─── KIRIM NOTIFIKASI FCM KE SEMUA SISWA ─────────────────────
-// Lokasi: Ganti baris 40 - 58 di index.js
-// GANTI SELURUH BLOK FUNGSI INI
 async function kirimNotifikasiRekomendasi(judul, instansi, refId = "") {
   try {
     const message = {
@@ -194,6 +193,24 @@ bot.on("message", async (msg) => {
     resetSesi(chatId);
     bot.sendMessage(chatId, "✅ Dibatalkan.");
     tampilkanMenu(chatId);
+    return;
+  }
+
+  // ─── TESTING ─────────────────────────────────────────────
+  if (teks === "🧪 Testing") {
+    resetSesi(chatId);
+    sesi[chatId].data = {
+      judul: "Magang Testing Dummy",
+      instansi: "PT Testing Bot",
+      jenis: "MAGANG",
+      lokasi: "Bandung",
+      deskripsi: "Ini adalah rekomendasi dummy untuk keperluan testing bot.",
+      targetJurusan: ["RPL", "TKJ"],
+      targetKeahlian: ["JavaScript", "Node.js"],
+      link: "https://example.com",
+      imageUrl: "",
+    };
+    await simpanRekomendasi(chatId);
     return;
   }
 
@@ -473,7 +490,6 @@ async function simpanRekomendasi(chatId) {
         createdAt: Date.now(),
       });
 
-    // ─── KIRIM NOTIFIKASI FCM ─────────────────────────────
     await kirimNotifikasiRekomendasi(d.judul, d.instansi, id);
     resetSesi(chatId);
     bot.sendMessage(
@@ -604,7 +620,6 @@ db.collection("notifikasi")
               topic: "siswa",
             });
 
-            // Simpan ke notifikasi_siswa
             await db.collection("notifikasi_siswa").add({
               tipe: data.tipe,
               judul: title,
@@ -617,7 +632,6 @@ db.collection("notifikasi")
             console.log(`✅ Notifikasi kuesioner terkirim: ${data.judul}`);
           }
 
-          // Tandai sudah dikirim
           await db
             .collection("notifikasi")
             .doc(change.doc.id)
