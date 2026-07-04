@@ -7,10 +7,9 @@ const {
 } = require("./config");
 const TelegramBot = require("node-telegram-bot-api");
 const { v4: uuidv4 } = require("uuid");
-const { db } = require("./firebase");
 const { createClient } = require("@supabase/supabase-js");
 const axios = require("axios");
-const admin = require("firebase-admin");
+const { db, admin } = require("./firebase");
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 const ws = require("ws");
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
@@ -45,20 +44,29 @@ function tampilkanMenu(chatId) {
 // ─── KIRIM NOTIFIKASI FCM KE SEMUA SISWA ─────────────────────
 // Lokasi: Ganti baris 40 - 58 di index.js
 // GANTI SELURUH BLOK FUNGSI INI
-async function kirimNotifikasiRekomendasi(judul, instansi) {
+async function kirimNotifikasiRekomendasi(judul, instansi, refId = "") {
   try {
     const message = {
       notification: {
         title: "📢 Rekomendasi Baru!",
         body: `${judul} dari ${instansi} — Cek sekarang!`,
       },
-      data: {
-        TIPE_NOTIFIKASI: "REKOMENDASI_BARU",
-      },
+      data: { TIPE_NOTIFIKASI: "REKOMENDASI_BARU" },
       topic: "siswa",
     };
-    const response = await admin.messaging().send(message);
-    console.log("✅ Notifikasi FCM terkirim:", response);
+    await admin.messaging().send(message);
+
+    // Simpan ke Firestore untuk tab notifikasi
+    await db.collection("notifikasi_siswa").add({
+      tipe: "REKOMENDASI_BARU",
+      judul: "📢 Rekomendasi Baru!",
+      pesan: `${judul} dari ${instansi} — Cek sekarang!`,
+      refId: refId,
+      createdAt: Date.now(),
+      sudahDibaca: false,
+    });
+
+    console.log("✅ Notifikasi FCM terkirim");
   } catch (error) {
     console.error("❌ Gagal kirim notifikasi FCM:", error);
   }
@@ -596,6 +604,17 @@ db.collection("notifikasi")
               },
               topic: "siswa",
             });
+
+            // Simpan ke notifikasi_siswa
+            await db.collection("notifikasi_siswa").add({
+              tipe: data.tipe,
+              judul: title,
+              pesan: body,
+              refId: "",
+              createdAt: Date.now(),
+              sudahDibaca: false,
+            });
+
             console.log(`✅ Notifikasi kuesioner terkirim: ${data.judul}`);
           }
 
