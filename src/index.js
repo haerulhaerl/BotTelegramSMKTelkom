@@ -474,8 +474,7 @@ async function simpanRekomendasi(chatId) {
       });
 
     // ─── KIRIM NOTIFIKASI FCM ─────────────────────────────
-    await kirimNotifikasiRekomendasi(d.judul, d.instansi);
-
+    await kirimNotifikasiRekomendasi(d.judul, d.instansi, id);
     resetSesi(chatId);
     bot.sendMessage(
       chatId,
