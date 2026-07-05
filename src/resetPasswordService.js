@@ -26,6 +26,29 @@ async function resetPasswordSiswa(uid, nama = "") {
     // tidak perlu throw, karena reset password auth-nya sudah berhasil
   }
 
+  // ─── KIRIM PUSH NOTIFICATION (FCM) KHUSUS KE SISWA INI ─────
+  try {
+    const userDoc = await db.collection("users").doc(uid).get();
+    const fcmToken = userDoc.exists ? userDoc.data().fcmToken : null;
+
+    if (fcmToken) {
+      await admin.messaging().send({
+        token: fcmToken,
+        notification: {
+          title: "🔑 Password Anda Direset",
+          body: `Password akun Anda telah direset oleh admin menjadi: ${DEFAULT_PASSWORD}`,
+        },
+        data: { TIPE_NOTIFIKASI: "PASSWORD_DIRESET" },
+      });
+      console.log(`✅ Push notification reset password terkirim ke device uid: ${uid}`);
+    } else {
+      console.log(`⚠️ Tidak ada fcmToken untuk uid: ${uid}, push notification dilewati`);
+    }
+  } catch (error) {
+    console.error("❌ Gagal kirim push notification reset password:", error);
+    // tidak perlu throw, notifikasi di Firestore sudah tersimpan sebagai fallback
+  }
+
   return { uid, passwordBaru: DEFAULT_PASSWORD };
 }
 
