@@ -64,6 +64,7 @@ async function kirimNotifikasiRekomendasi(judul, instansi, refId = "") {
       judul: "📢 Rekomendasi Baru!",
       pesan: `${judul} dari ${instansi} — Cek sekarang!`,
       refId: refId,
+      targetUid: "", // broadcast ke semua siswa
       createdAt: Date.now(),
       sudahDibaca: false,
     });
@@ -687,7 +688,7 @@ async function mulaiResetPasswordSiswa(chatId) {
 async function konfirmasiResetPassword(chatId) {
   try {
     const { uid, nama } = sesi[chatId].data.siswaDipilihReset;
-    await resetPasswordSiswa(uid);
+    await resetPasswordSiswa(uid, nama);
     resetSesi(chatId);
     bot.sendMessage(
       chatId,
@@ -733,6 +734,7 @@ db.collection("notifikasi")
               judul: title,
               pesan: body,
               refId: "",
+              targetUid: "", // broadcast ke semua siswa
               createdAt: Date.now(),
               sudahDibaca: false,
             });
