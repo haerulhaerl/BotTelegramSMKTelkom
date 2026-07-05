@@ -15,6 +15,8 @@ const ws = require("ws");
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   realtime: { transport: ws },
 });
+const { startServer } = require("./server");
+const { resetPasswordSiswa, DEFAULT_PASSWORD } = require("./resetPasswordService");
 
 // ─── STATE PERCAKAPAN ────────────────────────────────────────
 const sesi = {};
@@ -35,6 +37,7 @@ function tampilkanMenu(chatId) {
         [{ text: "➕ Tambah Rekomendasi" }],
         [{ text: "📋 Lihat Rekomendasi" }],
         [{ text: "🗑️ Hapus Rekomendasi" }],
+        [{ text: "🔑 Reset Password Siswa" }],
         [{ text: "🧪 Testing" }],
       ],
       resize_keyboard: true,
@@ -186,6 +189,11 @@ bot.on("message", async (msg) => {
 
   if (teks === "🗑️ Hapus Rekomendasi") {
     await mulaiHapusRekomendasi(chatId);
+    return;
+  }
+
+  if (teks === "🔑 Reset Password Siswa") {
+    await mulaiResetPasswordSiswa(chatId);
     return;
   }
 
@@ -432,6 +440,47 @@ bot.on("message", async (msg) => {
     return;
   }
 
+  // ─── ALUR RESET PASSWORD SISWA ───────────────────────────
+  if (tahap === "pilih_reset_password") {
+    const nomorDipilih = parseInt(teks);
+    const daftar = sesi[chatId].data.daftarSiswaReset;
+    if (
+      isNaN(nomorDipilih) ||
+      nomorDipilih < 1 ||
+      nomorDipilih > daftar.length
+    ) {
+      bot.sendMessage(chatId, "⚠️ Nomor tidak valid. Coba lagi.");
+      return;
+    }
+
+    const dipilih = daftar[nomorDipilih - 1];
+    sesi[chatId].data.siswaDipilihReset = dipilih;
+    sesi[chatId].tahap = "konfirmasi_reset_password";
+    bot.sendMessage(
+      chatId,
+      `🔑 Yakin ingin reset password:\n*${dipilih.nama}* (${dipilih.email})?\n\nPassword akan diubah menjadi: \`${DEFAULT_PASSWORD}\``,
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          keyboard: [[{ text: "✅ Ya, Reset" }, { text: "❌ Batal" }]],
+          resize_keyboard: true,
+        },
+      },
+    );
+    return;
+  }
+
+  if (tahap === "konfirmasi_reset_password") {
+    if (teks === "✅ Ya, Reset") {
+      await konfirmasiResetPassword(chatId);
+    } else {
+      resetSesi(chatId);
+      bot.sendMessage(chatId, "❌ Dibatalkan.");
+      tampilkanMenu(chatId);
+    }
+    return;
+  }
+
   tampilkanMenu(chatId);
 });
 
@@ -594,6 +643,65 @@ async function hapusRekomendasi(chatId) {
   }
 }
 
+// ─── RESET PASSWORD SISWA ─────────────────────────────────────
+async function mulaiResetPasswordSiswa(chatId) {
+  try {
+    bot.sendMessage(chatId, "⏳ Mengambil data siswa...");
+    const snapshot = await db
+      .collection("users")
+      .where("role", "==", "SISWA")
+      .get();
+
+    if (snapshot.empty) {
+      bot.sendMessage(chatId, "📭 Belum ada siswa terdaftar.");
+      tampilkanMenu(chatId);
+      return;
+    }
+
+    const daftar = [];
+    let pesan = "🔑 *Pilih nomor siswa yang password-nya ingin direset:*\n\n";
+
+    snapshot.forEach((doc) => {
+      const u = doc.data();
+      daftar.push({ uid: doc.id, nama: u.nama || "-", email: u.email || "-" });
+      pesan += `${daftar.length}. *${u.nama || "-"}*\n   📧 ${u.email || "-"}\n\n`;
+    });
+
+    pesan += "Ketik nomor urut siswa:";
+    sesi[chatId] = { tahap: "pilih_reset_password", data: { daftarSiswaReset: daftar } };
+
+    bot.sendMessage(chatId, pesan, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        keyboard: [[{ text: "❌ Batal" }]],
+        resize_keyboard: true,
+      },
+    });
+  } catch (error) {
+    console.error("Error ambil daftar siswa:", error);
+    bot.sendMessage(chatId, "❌ Gagal mengambil data siswa.");
+    tampilkanMenu(chatId);
+  }
+}
+
+async function konfirmasiResetPassword(chatId) {
+  try {
+    const { uid, nama } = sesi[chatId].data.siswaDipilihReset;
+    await resetPasswordSiswa(uid);
+    resetSesi(chatId);
+    bot.sendMessage(
+      chatId,
+      `✅ Password *${nama}* berhasil direset menjadi \`${DEFAULT_PASSWORD}\`.`,
+      { parse_mode: "Markdown" },
+    );
+    tampilkanMenu(chatId);
+  } catch (error) {
+    console.error("Error reset password:", error);
+    bot.sendMessage(chatId, "❌ Gagal reset password. Coba lagi nanti.");
+    tampilkanMenu(chatId);
+  }
+}
+
 // ─── PANTAU COLLECTION NOTIFIKASI DARI ANDROID ───────────────
 db.collection("notifikasi")
   .where("sudahDikirim", "==", false)
@@ -644,3 +752,5 @@ db.collection("notifikasi")
   });
 
 console.log("🤖 Bot Tracer Study berjalan...");
+
+startServer();

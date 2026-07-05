@@ -6,4 +6,5 @@ module.exports = {
   ADMIN_UID: process.env.ADMIN_UID,
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY,
+  ADMIN_API_KEY: process.env.ADMIN_API_KEY,
 };
