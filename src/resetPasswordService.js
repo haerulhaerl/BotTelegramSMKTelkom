@@ -14,7 +14,7 @@ async function resetPasswordSiswa(uid, nama = "") {
     await db.collection("notifikasi_siswa").add({
       tipe: "PASSWORD_DIRESET",
       judul: "🔑 Password Anda Direset",
-      pesan: `Password akun Anda telah direset oleh admin menjadi: ${DEFAULT_PASSWORD}. Segera login dan ganti password Anda.`,
+      pesan: "Password akun Anda telah direset oleh admin. Silakan hubungi admin untuk mengetahui password baru Anda, lalu segera ganti di halaman profil.",
       refId: "",
       targetUid: uid, // penting: hanya tampil untuk siswa ini
       createdAt: Date.now(),
@@ -36,11 +36,11 @@ async function resetPasswordSiswa(uid, nama = "") {
         token: fcmToken,
         notification: {
           title: "🔑 Password Anda Direset",
-          body: `Password akun Anda telah direset oleh admin menjadi: ${DEFAULT_PASSWORD}`,
+          body: "Password akun Anda telah direset oleh admin. Hubungi admin untuk password baru.",
         },
         data: { TIPE_NOTIFIKASI: "PASSWORD_DIRESET" },
         android: {
-          priority: "high", // kirim segera, jangan ditunda karena Doze/hemat baterai
+          priority: "high",
           notification: {
             priority: "high",
             channelId: "tracer_study_notification",
