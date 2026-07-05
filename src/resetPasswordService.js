@@ -39,6 +39,13 @@ async function resetPasswordSiswa(uid, nama = "") {
           body: `Password akun Anda telah direset oleh admin menjadi: ${DEFAULT_PASSWORD}`,
         },
         data: { TIPE_NOTIFIKASI: "PASSWORD_DIRESET" },
+        android: {
+          priority: "high", // kirim segera, jangan ditunda karena Doze/hemat baterai
+          notification: {
+            priority: "high",
+            channelId: "tracer_study_notification",
+          },
+        },
       });
       console.log(`✅ Push notification reset password terkirim ke device uid: ${uid}`);
     } else {
