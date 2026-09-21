@@ -20,6 +20,21 @@ const { resetPasswordSiswa, DEFAULT_PASSWORD } = require("./resetPasswordService
 const { parseCsv } = require("./csvParser");
 const { bulkImportSiswa } = require("./siswaAccountService");
 const { kirimNotifikasiTertarget } = require("./notifikasiService");
+
+// ─── ERROR POLLING TELEGRAM ──────────────────────────────────
+// Koneksi long-polling ke Telegram kadang putus (WiFi/ISP/laptop sleep).
+// Library otomatis mencoba lagi, jadi error jaringan cukup dicatat singkat.
+bot.on("polling_error", (error) => {
+  const pesanAsli = error.message || "";
+  if (/ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/.test(pesanAsli)) {
+    console.warn(`⚠️ Koneksi ke Telegram terputus sesaat (${pesanAsli}). Mencoba lagi otomatis...`);
+    return;
+  }
+  // Error lain tetap tampil lengkap, misal 409 Conflict = bot jalan di 2 terminal sekaligus
+  console.error("❌ Polling error:", error.code, pesanAsli);
+});
+
+
 // ─── STATE PERCAKAPAN ────────────────────────────────────────
 const sesi = {};
 
@@ -49,15 +64,16 @@ function tampilkanMenu(chatId) {
 }
 
 // ─── KIRIM NOTIFIKASI REKOMENDASI ────────────────────────────
-async function kirimNotifikasiRekomendasi(judul, instansi, refId = "") {
+async function kirimNotifikasiRekomendasi(judul, instansi, refId = "", targetAngkatan = []) {
   try {
     await kirimNotifikasiTertarget({
       tipe: "REKOMENDASI_BARU",
       judul: "📢 Rekomendasi Baru!",
       pesan: `${judul} dari ${instansi} — Cek sekarang!`,
       refId,
-      // Sementara ke semua siswa — penargetan rekomendasi dikerjakan menyusul
-      targetAngkatan: [],
+      targetAngkatan,
+      // Jurusan sengaja tidak menyaring notif rekomendasi: di aplikasi, jurusan
+      // hanya menaikkan skor (MatchingEngine), bukan menyembunyikan rekomendasi.
       targetJurusan: [],
     });
   } catch (error) {
@@ -277,7 +293,7 @@ bot.on("message", async (msg) => {
       jenis: "MAGANG",
       lokasi: "Bandung",
       deskripsi: "Ini adalah rekomendasi dummy untuk keperluan testing bot.",
-      targetJurusan: ["RPL", "TKJ"],
+      targetAngkatan: [],
       targetKeahlian: ["JavaScript", "Node.js"],
       link: "https://example.com",
       imageUrl: "",
@@ -383,6 +399,40 @@ bot.on("message", async (msg) => {
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean);
+    sesi[chatId].tahap = "targetAngkatan";
+    bot.sendMessage(
+      chatId,
+      "📅 Masukkan *target angkatan* (pisah dengan koma):\nContoh: `2023, 2024`\n\nKetik `-` untuk semua angkatan.\n\n_Siswa di luar angkatan ini tidak akan melihat rekomendasi dan tidak menerima notifikasinya._",
+      {
+        parse_mode: "Markdown",
+        reply_markup: {
+          keyboard: [[{ text: "❌ Batal" }]],
+          resize_keyboard: true,
+        },
+      },
+    );
+    return;
+  }
+
+  if (tahap === "targetAngkatan") {
+    if (teks === "-") {
+      sesi[chatId].data.targetAngkatan = [];
+    } else {
+      const daftar = teks
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const tidakValid = daftar.filter((a) => !/^\d{4}$/.test(a));
+      if (daftar.length === 0 || tidakValid.length > 0) {
+        bot.sendMessage(
+          chatId,
+          `⚠️ Angkatan harus tahun 4 digit, contoh \`2024\`.\nTidak valid: ${amankanMarkdown(tidakValid.join(", ") || teks)}\n\nCoba lagi, atau ketik \`-\` untuk semua angkatan.`,
+          { parse_mode: "Markdown" },
+        );
+        return; // tetap di tahap ini, admin mengetik ulang
+      }
+      sesi[chatId].data.targetAngkatan = [...new Set(daftar)].sort();
+    }
     sesi[chatId].tahap = "targetKeahlian";
     bot.sendMessage(
       chatId,
@@ -559,7 +609,7 @@ async function lanjutKeKonfirmasi(chatId) {
 📌 *Jenis:* ${d.jenis}
 📍 *Lokasi:* ${d.lokasi || "-"}
 📄 *Deskripsi:* ${d.deskripsi || "-"}
-🎓 *Target Jurusan:* ${d.targetJurusan.length > 0 ? d.targetJurusan.join(", ") : "Semua"}
+📅 *Target Angkatan:* ${d.targetAngkatan && d.targetAngkatan.length > 0 ? d.targetAngkatan.join(", ") : "Semua"}
 💡 *Target Keahlian:* ${d.targetKeahlian.length > 0 ? d.targetKeahlian.join(", ") : "-"}
 🔗 *Link:* ${d.link || "-"}
 🖼️ *Foto:* ${d.imageUrl ? "Ada ✅" : "Tidak ada"}
@@ -596,6 +646,7 @@ async function simpanRekomendasi(chatId) {
         imageUrl: d.imageUrl || "",
         link: d.link || "",
         targetJurusan: d.targetJurusan || [],
+        targetAngkatan: d.targetAngkatan || [],
         targetKeahlian: d.targetKeahlian || [],
         targetMinat: [],
         deadline: null,
@@ -603,7 +654,7 @@ async function simpanRekomendasi(chatId) {
         createdAt: Date.now(),
       });
 
-    await kirimNotifikasiRekomendasi(d.judul, d.instansi, id);
+    await kirimNotifikasiRekomendasi(d.judul, d.instansi, id, d.targetAngkatan || []);
     resetSesi(chatId);
     bot.sendMessage(
       chatId,
@@ -939,6 +990,30 @@ db.collection("notifikasi")
               targetAngkatan: data.targetAngkatan || "",
               targetJurusan: data.targetJurusan || [],
             });
+          } else if (data.tipe === "REKOMENDASI_BARU") {
+            // Dikirim Android saat admin menambah rekomendasi dari aplikasi (dipakai mulai langkah 4)
+            await kirimNotifikasiRekomendasi(
+              data.judul || "Rekomendasi baru",
+              data.instansi || "admin",
+              data.refId || "",
+              data.targetAngkatan || [],
+            );
+          } else if (data.tipe === "REKOMENDASI_BARU") {
+            // Dikirim Android saat admin menambah rekomendasi dari aplikasi (dipakai mulai langkah 4)
+            await kirimNotifikasiRekomendasi(
+              data.judul || "Rekomendasi baru",
+              data.instansi || "admin",
+              data.refId || "",
+              data.targetAngkatan || [],
+            );
+          } else if (data.tipe === "REKOMENDASI_BARU") {
+            // Dikirim Android saat admin menambah rekomendasi dari aplikasi (dipakai mulai langkah 4)
+            await kirimNotifikasiRekomendasi(
+              data.judul || "Rekomendasi baru",
+              data.instansi || "admin",
+              data.refId || "",
+              data.targetAngkatan || [],
+            );
           }
 
           await db
