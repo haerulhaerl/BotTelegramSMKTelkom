@@ -17,7 +17,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 });
 const { startServer } = require("./server");
 const { resetPasswordSiswa, DEFAULT_PASSWORD } = require("./resetPasswordService");
-
+const { parseCsv } = require("./csvParser");
+const { bulkImportSiswa } = require("./siswaAccountService");
+const { kirimNotifikasiTertarget } = require("./notifikasiService");
 // ─── STATE PERCAKAPAN ────────────────────────────────────────
 const sesi = {};
 
@@ -38,6 +40,7 @@ function tampilkanMenu(chatId) {
         [{ text: "📋 Lihat Rekomendasi" }],
         [{ text: "🗑️ Hapus Rekomendasi" }],
         [{ text: "🔑 Reset Password Siswa" }],
+        [{ text: "📥 Import Siswa (CSV)" }],
         [{ text: "🧪 Testing" }],
       ],
       resize_keyboard: true,
@@ -45,36 +48,22 @@ function tampilkanMenu(chatId) {
   });
 }
 
-// ─── KIRIM NOTIFIKASI FCM KE SEMUA SISWA ─────────────────────
+// ─── KIRIM NOTIFIKASI REKOMENDASI ────────────────────────────
 async function kirimNotifikasiRekomendasi(judul, instansi, refId = "") {
   try {
-    const message = {
-      notification: {
-        title: "📢 Rekomendasi Baru!",
-        body: `${judul} dari ${instansi} — Cek sekarang!`,
-      },
-      data: { TIPE_NOTIFIKASI: "REKOMENDASI_BARU" },
-      topic: "siswa",
-    };
-    await admin.messaging().send(message);
-
-    // Simpan ke Firestore untuk tab notifikasi
-    await db.collection("notifikasi_siswa").add({
+    await kirimNotifikasiTertarget({
       tipe: "REKOMENDASI_BARU",
       judul: "📢 Rekomendasi Baru!",
       pesan: `${judul} dari ${instansi} — Cek sekarang!`,
-      refId: refId,
-      targetUid: "", // broadcast ke semua siswa
-      createdAt: Date.now(),
-      sudahDibaca: false,
+      refId,
+      // Sementara ke semua siswa — penargetan rekomendasi dikerjakan menyusul
+      targetAngkatan: [],
+      targetJurusan: [],
     });
-
-    console.log("✅ Notifikasi FCM terkirim");
   } catch (error) {
-    console.error("❌ Gagal kirim notifikasi FCM:", error);
+    console.error("❌ Gagal kirim notifikasi rekomendasi:", error);
   }
 }
-
 // ─── UPLOAD FOTO KE SUPABASE ─────────────────────────────────
 async function uploadFotoKeSupabase(fileId) {
   try {
@@ -151,6 +140,53 @@ bot.on("photo", async (msg) => {
   }
 });
 
+// ─── HANDLER DOKUMEN (FILE CSV IMPORT SISWA) ─────────────────
+bot.on("document", async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return;
+  if (!sesi[chatId]) resetSesi(chatId);
+
+  const { tahap } = sesi[chatId];
+
+  if (tahap !== "upload_csv") {
+    bot.sendMessage(chatId, "⚠️ File tidak diharapkan di tahap ini.");
+    return;
+  }
+
+  const doc = msg.document;
+
+  if (doc.file_size > 2 * 1024 * 1024) {
+    bot.sendMessage(chatId, "❌ File terlalu besar (maksimal 2 MB).");
+    return;
+  }
+
+  if (!doc.file_name || !doc.file_name.toLowerCase().endsWith(".csv")) {
+    bot.sendMessage(
+      chatId,
+      "❌ File harus berformat *.csv*.\n\nKalau datamu di Excel, simpan dulu sebagai CSV (File → Save As → CSV UTF-8).",
+      { parse_mode: "Markdown" },
+    );
+    return;
+  }
+
+  bot.sendMessage(chatId, "⏳ Membaca file CSV...");
+
+  const csvContent = await unduhIsiFileTelegram(doc.file_id);
+  if (csvContent === null) {
+    bot.sendMessage(chatId, "❌ Gagal mengunduh file. Coba kirim ulang.");
+    return;
+  }
+
+  const hasilParse = parseCsv(csvContent);
+
+  if (!hasilParse.ok) {
+    bot.sendMessage(chatId, `❌ ${hasilParse.reason}`);
+    return;
+  }
+
+  await tampilkanPreviewImport(chatId, hasilParse.rows, doc.file_name);
+});
+
 // ─── HANDLER PESAN TEKS ──────────────────────────────────────
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
@@ -193,8 +229,35 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  if (teks === "🔑 Reset Password Siswa") {
+    if (teks === "🔑 Reset Password Siswa") {
     await mulaiResetPasswordSiswa(chatId);
+    return;
+  }
+
+
+  if (teks === "📥 Import Siswa (CSV)") {
+    await mulaiImportSiswa(chatId);
+    return;
+  }
+
+    // ─── ALUR IMPORT SISWA ───────────────────────────────────
+  if (tahap === "upload_csv") {
+    bot.sendMessage(
+      chatId,
+      "⚠️ Kirim *file CSV* sebagai dokumen (lampiran 📎), bukan teks.",
+      { parse_mode: "Markdown" },
+    );
+    return;
+  }
+
+  if (tahap === "konfirmasi_import") {
+    if (teks === "✅ Ya, Import") {
+      await jalankanImportSiswa(chatId);
+    } else {
+      resetSesi(chatId);
+      bot.sendMessage(chatId, "❌ Dibatalkan.");
+      tampilkanMenu(chatId);
+    }
     return;
   }
 
@@ -703,6 +766,159 @@ async function konfirmasiResetPassword(chatId) {
   }
 }
 
+// ─── IMPORT SISWA VIA CSV 
+
+/** Amankan teks dinamis (nama file, nama siswa, pesan error) sebelum
+ *  dimasukkan ke pesan ber-Markdown. Tanpa ini, karakter seperti _ atau *
+ *  di dalam data akan dibaca Telegram sebagai perintah format dan
+ *  membuat seluruh pesan ditolak (error "can't parse entities"). */
+function amankanMarkdown(teks) {
+  if (teks === null || teks === undefined) return "";
+  return String(teks).replace(/([_*`\[\]])/g, "\\$1");
+}
+
+async function mulaiImportSiswa(chatId) {
+  resetSesi(chatId);
+  sesi[chatId].tahap = "upload_csv";
+
+  bot.sendMessage(
+    chatId,
+    `📥 *Import Siswa dari CSV*
+
+Kirim file CSV sebagai *dokumen* (lampiran 📎).
+
+Format kolom (baris pertama wajib header):
+\`nisn,nama,jurusan,angkatan,noTelepon\`
+
+Contoh isi:
+\`\`\`
+nisn,nama,jurusan,angkatan,noTelepon
+0051234567,Ahmad Fauzi,RPL,2023,081234567890
+\`\`\`
+
+Catatan:
+- NISN wajib 10 digit angka
+- Password semua akun: \`${DEFAULT_PASSWORD}\`
+- Email dibuat otomatis dari NISN`,
+    {
+      parse_mode: "Markdown",
+      reply_markup: {
+        keyboard: [[{ text: "❌ Batal" }]],
+        resize_keyboard: true,
+      },
+    },
+  );
+}
+
+/** Unduh isi file dari Telegram sebagai teks. Return null kalau gagal. */
+async function unduhIsiFileTelegram(fileId) {
+  try {
+    const fileInfo = await bot.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileInfo.file_path}`;
+    const response = await axios.get(fileUrl, { responseType: "arraybuffer" });
+    return Buffer.from(response.data).toString("utf8");
+  } catch (error) {
+    console.error("❌ Gagal unduh file CSV dari Telegram:", error);
+    return null;
+  }
+}
+
+async function tampilkanPreviewImport(chatId, rows, fileName) {
+  const rowsValid = rows.filter((r) => r.status !== "ERROR");
+  const rowsError = rows.filter((r) => r.status === "ERROR");
+
+    let pesan = `📋 *Preview Import*\n📄 File: ${amankanMarkdown(fileName)}\n\n`;
+  pesan += `Total baris: ${rows.length}\n`;
+  pesan += `✅ Siap diimport: ${rowsValid.length}\n`;
+  pesan += `❌ Ditolak: ${rowsError.length}\n`;
+
+  if (rowsValid.length > 0) {
+    pesan += `\n*Akan diimport:*\n`;
+    // Batasi 15 baris di pesan — Telegram punya batas 4096 karakter per pesan,
+    // dan 200 baris akan melebihi itu.
+    rowsValid.slice(0, 15).forEach((r) => {
+      const tandaWarning = r.status === "WARNING" ? " ⚠️" : "";
+      pesan += `• ${amankanMarkdown(r.nama)} (${amankanMarkdown(r.nisn)})${tandaWarning}\n`;
+    });
+
+    if (rowsValid.length > 15) {
+      pesan += `_...dan ${rowsValid.length - 15} lainnya_\n`;
+    }
+  }
+
+  if (rowsError.length > 0) {
+    pesan += `\n*Ditolak:*\n`;
+      rowsError.slice(0, 10).forEach((r) => {
+      pesan += `• Baris ${r.rowNumber}: ${amankanMarkdown(r.message)}\n`;
+    });
+    if (rowsError.length > 10) {
+      pesan += `_...dan ${rowsError.length - 10} lainnya_\n`;
+    }
+  }
+
+  if (rowsValid.length === 0) {
+    resetSesi(chatId);
+    bot.sendMessage(chatId, pesan + `\n❌ Tidak ada baris yang bisa diimport.`, {
+      parse_mode: "Markdown",
+    });
+    tampilkanMenu(chatId);
+    return;
+  }
+
+  sesi[chatId] = {
+    tahap: "konfirmasi_import",
+    data: { rowsSiapImport: rowsValid },
+  };
+
+  bot.sendMessage(chatId, pesan + `\nLanjutkan import?`, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      keyboard: [[{ text: "✅ Ya, Import" }, { text: "❌ Batal" }]],
+      resize_keyboard: true,
+    },
+  });
+}
+
+async function jalankanImportSiswa(chatId) {
+  const rows = sesi[chatId].data.rowsSiapImport;
+
+  bot.sendMessage(
+    chatId,
+    `⏳ Membuat ${rows.length} akun siswa...\n\nProses dibuat satu per satu, mohon tunggu.`,
+  );
+
+  try {
+    const hasil = await bulkImportSiswa(rows);
+    resetSesi(chatId);
+
+    let pesan = `✅ *Import Selesai*\n\n`;
+    pesan += `Berhasil: ${hasil.berhasil.length} akun\n`;
+    pesan += `Gagal: ${hasil.gagal.length} baris\n`;
+
+    if (hasil.gagal.length > 0) {
+      pesan += `\n*Yang gagal:*\n`;
+      hasil.gagal.slice(0, 10).forEach((g) => {
+      pesan += `• ${amankanMarkdown(g.nama)} (${amankanMarkdown(g.nisn)}): ${amankanMarkdown(g.alasan)}\n`;
+      });
+      if (hasil.gagal.length > 10) {
+        pesan += `_...dan ${hasil.gagal.length - 10} lainnya_\n`;
+      }
+    }
+
+    if (hasil.berhasil.length > 0) {
+      pesan += `\nPassword semua akun baru: \`${DEFAULT_PASSWORD}\``;
+    }
+
+    bot.sendMessage(chatId, pesan, { parse_mode: "Markdown" });
+    tampilkanMenu(chatId);
+  } catch (error) {
+    console.error("❌ Gagal bulk import via bot:", error);
+    resetSesi(chatId);
+    bot.sendMessage(chatId, `❌ Gagal import: ${error.message}`);
+    tampilkanMenu(chatId);
+  }
+}
+
 // ─── PANTAU COLLECTION NOTIFIKASI DARI ANDROID ───────────────
 db.collection("notifikasi")
   .where("sudahDikirim", "==", false)
@@ -712,34 +928,17 @@ db.collection("notifikasi")
         const data = change.doc.data();
 
         try {
-          let title = "";
-          let body = "";
-
           if (data.tipe === "KUESIONER_BARU") {
-            title = "📝 Kuesioner Baru!";
-            body = `Admin menambahkan kuesioner baru: "${data.judul}". Isi sekarang!`;
-          }
-
-          if (title) {
-            await admin.messaging().send({
-              notification: { title, body },
-              data: {
-                TIPE_NOTIFIKASI: data.tipe,
-              },
-              topic: "siswa",
-            });
-
-            await db.collection("notifikasi_siswa").add({
+            await kirimNotifikasiTertarget({
               tipe: data.tipe,
-              judul: title,
-              pesan: body,
+              judul: "📝 Kuesioner Baru!",
+              pesan: `Admin menambahkan kuesioner baru: "${data.judul}". Isi sekarang!`,
               refId: "",
-              targetUid: "", // broadcast ke semua siswa
-              createdAt: Date.now(),
-              sudahDibaca: false,
+              // Field ini dikirim Android mulai Fase B.
+              // Selama belum ada, otomatis dianggap "semua siswa".
+              targetAngkatan: data.targetAngkatan || "",
+              targetJurusan: data.targetJurusan || [],
             });
-
-            console.log(`✅ Notifikasi kuesioner terkirim: ${data.judul}`);
           }
 
           await db
