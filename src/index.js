@@ -20,6 +20,12 @@ const { resetPasswordSiswa, DEFAULT_PASSWORD } = require("./resetPasswordService
 const { parseCsv } = require("./csvParser");
 const { bulkImportSiswa } = require("./siswaAccountService");
 const { kirimNotifikasiTertarget } = require("./notifikasiService");
+const {
+  DAFTAR_JURUSAN,
+  ANGKATAN_TERTUA,
+  bakukanJurusan,
+  angkatanValid,
+} = require("./dataSekolah");
 
 // ─── ERROR POLLING TELEGRAM ──────────────────────────────────
 // Koneksi long-polling ke Telegram kadang putus (WiFi/ISP/laptop sleep).
@@ -196,6 +202,41 @@ function tanyaDeskripsi(chatId) {
   bot.sendMessage(
     chatId,
     "📄 Masukkan *deskripsi* singkat:\n\nKetik `-` jika tidak ada.",
+    {
+      parse_mode: "Markdown",
+      reply_markup: {
+        keyboard: [[{ text: "❌ Batal" }]],
+        resize_keyboard: true,
+      },
+    },
+  );
+}
+
+// ─── TARGET JURUSAN (TOMBOL PILIHAN) ─────────────────────────
+const TOMBOL_SEMUA_JURUSAN = "Semua jurusan";
+const TOMBOL_SELESAI_JURUSAN = "✅ Selesai";
+
+/** Keyboard target jurusan: satu tombol per jurusan baku dari dataSekolah.js,
+ *  jadi kalau ada jurusan baru cukup ditambah di DAFTAR_JURUSAN. */
+function keyboardTargetJurusan() {
+  return {
+    keyboard: [
+      DAFTAR_JURUSAN.map((j) => ({ text: j })),
+      [{ text: TOMBOL_SEMUA_JURUSAN }],
+      [{ text: TOMBOL_SELESAI_JURUSAN }],
+      [{ text: "❌ Batal" }],
+    ],
+    resize_keyboard: true,
+  };
+}
+
+/** Pertanyaan target angkatan dipakai dari dua tempat
+ *  ("Semua jurusan" dan "✅ Selesai"), jadi dijadikan satu fungsi. */
+function tanyaTargetAngkatan(chatId) {
+  sesi[chatId].tahap = "targetAngkatan";
+  bot.sendMessage(
+    chatId,
+    "📅 Masukkan *target angkatan* (pisah dengan koma):\nContoh: `2023, 2024`\n\nKetik `-` untuk semua angkatan.\n\n_Siswa di luar angkatan ini tidak akan melihat rekomendasi dan tidak menerima notifikasinya._",
     {
       parse_mode: "Markdown",
       reply_markup: {
@@ -451,39 +492,62 @@ bot.on("message", async (msg) => {
   if (tahap === "deskripsi") {
     sesi[chatId].data.deskripsi = teks === "-" ? "" : teks;
     sesi[chatId].tahap = "targetJurusan";
+    sesi[chatId].data.targetJurusan = [];
     bot.sendMessage(
       chatId,
-      "🎓 Masukkan *target jurusan* (pisah dengan koma):\nContoh: `RPL, TKJ, PERHOTELAN`\n\nKetik `-` untuk semua jurusan.",
-      {
-        parse_mode: "Markdown",
-        reply_markup: {
-          keyboard: [[{ text: "❌ Batal" }]],
-          resize_keyboard: true,
-        },
-      },
+      "🎓 Pilih *target jurusan* dengan tombol di bawah.\nBisa lebih dari satu: tekan satu per satu, lalu tekan *✅ Selesai*.\n\nTekan *Semua jurusan* kalau rekomendasi ini untuk semua jurusan.",
+      { parse_mode: "Markdown", reply_markup: keyboardTargetJurusan() },
     );
     return;
   }
 
   if (tahap === "targetJurusan") {
-    sesi[chatId].data.targetJurusan =
-      teks === "-"
-        ? []
-        : teks
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-    sesi[chatId].tahap = "targetAngkatan";
+    // "-" tetap diterima sebagai "semua jurusan" (cara lama)
+    if (teks === TOMBOL_SEMUA_JURUSAN || teks === "-") {
+      sesi[chatId].data.targetJurusan = [];
+      tanyaTargetAngkatan(chatId);
+      return;
+    }
+
+    if (teks === TOMBOL_SELESAI_JURUSAN) {
+      if (sesi[chatId].data.targetJurusan.length === 0) {
+        bot.sendMessage(
+          chatId,
+          "⚠️ Belum ada jurusan yang dipilih. Pilih minimal satu, atau tekan *Semua jurusan*.",
+          { parse_mode: "Markdown", reply_markup: keyboardTargetJurusan() },
+        );
+        return;
+      }
+      tanyaTargetAngkatan(chatId);
+      return;
+    }
+
+    // Tombol jurusan, atau ketikan manual seperti "rpl, tkj" -> dibakukan dulu
+    const masukan = teks
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const tidakDikenali = masukan.filter((j) => !bakukanJurusan(j));
+    if (masukan.length === 0 || tidakDikenali.length > 0) {
+      bot.sendMessage(
+        chatId,
+        `⚠️ Jurusan tidak dikenali: ${amankanMarkdown(tidakDikenali.join(", ") || teks)}\nPilih lewat tombol di bawah.`,
+        { parse_mode: "Markdown", reply_markup: keyboardTargetJurusan() },
+      );
+      return; // tetap di tahap ini
+    }
+
+    const dipilih = sesi[chatId].data.targetJurusan;
+    masukan
+      .map((j) => bakukanJurusan(j))
+      .forEach((j) => {
+        if (!dipilih.includes(j)) dipilih.push(j);
+      });
+
     bot.sendMessage(
       chatId,
-      "📅 Masukkan *target angkatan* (pisah dengan koma):\nContoh: `2023, 2024`\n\nKetik `-` untuk semua angkatan.\n\n_Siswa di luar angkatan ini tidak akan melihat rekomendasi dan tidak menerima notifikasinya._",
-      {
-        parse_mode: "Markdown",
-        reply_markup: {
-          keyboard: [[{ text: "❌ Batal" }]],
-          resize_keyboard: true,
-        },
-      },
+      `Dipilih: *${dipilih.join(", ")}*\n\nTekan jurusan lain untuk menambah, atau *✅ Selesai* untuk lanjut.`,
+      { parse_mode: "Markdown", reply_markup: keyboardTargetJurusan() },
     );
     return;
   }
@@ -496,11 +560,11 @@ bot.on("message", async (msg) => {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
-      const tidakValid = daftar.filter((a) => !/^\d{4}$/.test(a));
+      const tidakValid = daftar.filter((a) => !angkatanValid(a));
       if (daftar.length === 0 || tidakValid.length > 0) {
         bot.sendMessage(
           chatId,
-          `⚠️ Angkatan harus tahun 4 digit, contoh \`2024\`.\nTidak valid: ${amankanMarkdown(tidakValid.join(", ") || teks)}\n\nCoba lagi, atau ketik \`-\` untuk semua angkatan.`,
+          `⚠️ Angkatan harus tahun lulus 4 digit, dari ${ANGKATAN_TERTUA} sampai tahun ini, contoh \`2024\`.\nTidak valid: ${amankanMarkdown(tidakValid.join(", ") || teks)}\n\nCoba lagi, atau ketik \`-\` untuk semua angkatan.`,
           { parse_mode: "Markdown" },
         );
         return; // tetap di tahap ini, admin mengetik ulang
@@ -684,6 +748,7 @@ async function lanjutKeKonfirmasi(chatId) {
 📍 *Lokasi:* ${d.lokasi || "-"}
 🗺️ *Pin Peta:* ${d.latitude != null ? `${d.latitude}, ${d.longitude}` : "Tidak ada"}
 📄 *Deskripsi:* ${d.deskripsi || "-"}
+🎓 *Target Jurusan:* ${d.targetJurusan && d.targetJurusan.length > 0 ? d.targetJurusan.join(", ") : "Semua"}
 📅 *Target Angkatan:* ${d.targetAngkatan && d.targetAngkatan.length > 0 ? d.targetAngkatan.join(", ") : "Semua"}
 💡 *Target Keahlian:* ${d.targetKeahlian.length > 0 ? d.targetKeahlian.join(", ") : "-"}
 🔗 *Link:* ${d.link || "-"}
