@@ -50,7 +50,10 @@ const PEMETAAN = {
 
 /** "Rekayasa Perangkat-Lunak " -> "rekayasaperangkatlunak" */
 function ratakan(teks) {
-  return String(teks).toLowerCase().replace(/&/g, "dan").replace(/[^a-z0-9]/g, "");
+  return String(teks)
+    .toLowerCase()
+    .replace(/&/g, "dan")
+    .replace(/[^a-z0-9]/g, "");
 }
 
 /** Tentukan bentuk baku sebuah nilai jurusan beserta statusnya. */
@@ -110,7 +113,8 @@ async function periksaFieldDaftar(namaKoleksi) {
       if (status !== "kosong" && !baru.includes(hasil)) baru.push(hasil);
     });
 
-    const berubah = baru.length !== daftar.length || baru.some((v, i) => v !== daftar[i]);
+    const berubah =
+      baru.length !== daftar.length || baru.some((v, i) => v !== daftar[i]);
     if (berubah) {
       perubahan.push({
         ref: doc.ref,
@@ -132,26 +136,38 @@ function tampilkanLaporan(label, { total, ringkasan, perubahan }) {
   console.log(`\n=== ${label} (${total} dokumen) ===`);
   for (const [nilai, info] of ringkasan) {
     const tampil = nilai === "" ? "(kosong)" : `"${nilai}"`;
-    const keterangan = info.status === "diubah" ? `-> "${info.hasil}"` : arti[info.status];
-    console.log(`  ${tampil.padEnd(34)} ${String(info.jumlah).padStart(3)}x  ${keterangan}`);
+    const keterangan =
+      info.status === "diubah" ? `-> "${info.hasil}"` : arti[info.status];
+    console.log(
+      `  ${tampil.padEnd(34)} ${String(info.jumlah).padStart(3)}x  ${keterangan}`,
+    );
   }
 
   console.log(`  Dokumen yang akan diubah: ${perubahan.length}`);
-  perubahan.slice(0, 10).forEach((p) => console.log(`    - ${p.ref.path} | ${p.keterangan}`));
-  if (perubahan.length > 10) console.log(`    ...dan ${perubahan.length - 10} lainnya`);
+  perubahan
+    .slice(0, 10)
+    .forEach((p) => console.log(`    - ${p.ref.path} | ${p.keterangan}`));
+  if (perubahan.length > 10)
+    console.log(`    ...dan ${perubahan.length - 10} lainnya`);
 }
 
 async function terapkanSemua(perubahan) {
   // Satu batch Firestore maksimal 500 operasi
   for (let i = 0; i < perubahan.length; i += 500) {
     const batch = db.batch();
-    perubahan.slice(i, i + 500).forEach(({ ref, data }) => batch.update(ref, data));
+    perubahan
+      .slice(i, i + 500)
+      .forEach(({ ref, data }) => batch.update(ref, data));
     await batch.commit();
   }
 }
 
 async function main() {
-  console.log(TERAPKAN ? "MODE: TERAPKAN (data akan diubah)" : "MODE: UJI COBA (tidak ada yang diubah)");
+  console.log(
+    TERAPKAN
+      ? "MODE: TERAPKAN (data akan diubah)"
+      : "MODE: UJI COBA (tidak ada yang diubah)",
+  );
 
   const hasil = {
     "siswaProfile.jurusan": await periksaFieldTeks("siswaProfile"),
@@ -168,11 +184,15 @@ async function main() {
   );
 
   if (adaTidakDikenali) {
-    console.log("\nPERHATIAN: ada nilai TIDAK DIKENALI. Tambahkan ke PEMETAAN atau perbaiki manual.");
+    console.log(
+      "\nPERHATIAN: ada nilai TIDAK DIKENALI. Tambahkan ke PEMETAAN atau perbaiki manual.",
+    );
   }
 
   if (!TERAPKAN) {
-    console.log(`\nTotal ${semuaPerubahan.length} dokumen AKAN diubah. Jalankan ulang dengan --terapkan untuk menerapkan.`);
+    console.log(
+      `\nTotal ${semuaPerubahan.length} dokumen AKAN diubah. Jalankan ulang dengan --terapkan untuk menerapkan.`,
+    );
     return;
   }
 
