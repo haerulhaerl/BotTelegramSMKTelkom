@@ -156,6 +156,56 @@ bot.on("photo", async (msg) => {
   }
 });
 
+// ─── HANDLER PIN LOKASI (📎 → Location) ──────────────────────
+bot.on("location", async (msg) => {
+  const chatId = msg.chat.id;
+  if (!isAdmin(chatId)) return;
+  if (!sesi[chatId]) resetSesi(chatId);
+
+  if (sesi[chatId].tahap !== "pin") {
+    bot.sendMessage(chatId, "⚠️ Lokasi tidak diharapkan di tahap ini.");
+    return;
+  }
+
+  const { latitude, longitude } = msg.location;
+  sesi[chatId].data.latitude = latitude;
+  sesi[chatId].data.longitude = longitude;
+  await bot.sendMessage(chatId, `✅ Pin tersimpan: ${latitude}, ${longitude}`);
+  tanyaDeskripsi(chatId);
+});
+
+/** Ubah teks "-5.1477, 119.4327" jadi { latitude, longitude }.
+ *  Return null kalau formatnya salah atau angkanya di luar rentang. */
+function parseKoordinat(teks) {
+  const cocok = teks
+    .trim()
+    .match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+  if (!cocok) return null;
+
+  const latitude = parseFloat(cocok[1]);
+  const longitude = parseFloat(cocok[2]);
+  if (latitude < -90 || latitude > 90) return null;
+  if (longitude < -180 || longitude > 180) return null;
+  return { latitude, longitude };
+}
+
+/** Pertanyaan deskripsi dipakai dari dua tempat (pin via Location
+ *  dan pin via teks), jadi dijadikan satu fungsi. */
+function tanyaDeskripsi(chatId) {
+  sesi[chatId].tahap = "deskripsi";
+  bot.sendMessage(
+    chatId,
+    "📄 Masukkan *deskripsi* singkat:\n\nKetik `-` jika tidak ada.",
+    {
+      parse_mode: "Markdown",
+      reply_markup: {
+        keyboard: [[{ text: "❌ Batal" }]],
+        resize_keyboard: true,
+      },
+    },
+  );
+}
+
 // ─── HANDLER DOKUMEN (FILE CSV IMPORT SISWA) ─────────────────
 bot.on("document", async (msg) => {
   const chatId = msg.chat.id;
@@ -359,18 +409,42 @@ bot.on("message", async (msg) => {
 
   if (tahap === "lokasi") {
     sesi[chatId].data.lokasi = teks === "-" ? "" : teks;
-    sesi[chatId].tahap = "deskripsi";
+    sesi[chatId].tahap = "pin";
     bot.sendMessage(
       chatId,
-      "📄 Masukkan *deskripsi* singkat:\n\nKetik `-` jika tidak ada.",
+      "🗺️ Kirim *pin lokasi*:\n📎 Lampiran → Location, geser pin ke tempatnya, lalu kirim.\n\nBisa juga ketik koordinat, contoh: `-5.1477, 119.4327`\n\nKetik `-` jika tidak ada pin.",
       {
         parse_mode: "Markdown",
         reply_markup: {
-          keyboard: [[{ text: "❌ Batal" }]],
+          keyboard: [[{ text: "-" }], [{ text: "❌ Batal" }]],
           resize_keyboard: true,
         },
       },
     );
+    return;
+  }
+
+  if (tahap === "pin") {
+    if (teks === "-") {
+      sesi[chatId].data.latitude = null;
+      sesi[chatId].data.longitude = null;
+      tanyaDeskripsi(chatId);
+      return;
+    }
+
+    const koordinat = parseKoordinat(teks);
+    if (!koordinat) {
+      bot.sendMessage(
+        chatId,
+        "⚠️ Format koordinat tidak dikenali.\nContoh: `-5.1477, 119.4327` (lintang dulu, lalu bujur)\n\nAtau kirim pin lewat 📎 → Location, atau ketik `-` untuk lewati.",
+        { parse_mode: "Markdown" },
+      );
+      return; // tetap di tahap pin, admin mencoba lagi
+    }
+
+    sesi[chatId].data.latitude = koordinat.latitude;
+    sesi[chatId].data.longitude = koordinat.longitude;
+    tanyaDeskripsi(chatId);
     return;
   }
 
@@ -608,6 +682,7 @@ async function lanjutKeKonfirmasi(chatId) {
 🏢 *Instansi:* ${d.instansi}
 📌 *Jenis:* ${d.jenis}
 📍 *Lokasi:* ${d.lokasi || "-"}
+🗺️ *Pin Peta:* ${d.latitude != null ? `${d.latitude}, ${d.longitude}` : "Tidak ada"}
 📄 *Deskripsi:* ${d.deskripsi || "-"}
 📅 *Target Angkatan:* ${d.targetAngkatan && d.targetAngkatan.length > 0 ? d.targetAngkatan.join(", ") : "Semua"}
 💡 *Target Keahlian:* ${d.targetKeahlian.length > 0 ? d.targetKeahlian.join(", ") : "-"}
@@ -642,6 +717,8 @@ async function simpanRekomendasi(chatId) {
         instansi: d.instansi,
         jenis: d.jenis,
         lokasi: d.lokasi || "",
+        latitude: d.latitude ?? null,
+        longitude: d.longitude ?? null,
         deskripsi: d.deskripsi || "",
         imageUrl: d.imageUrl || "",
         link: d.link || "",
@@ -991,23 +1068,7 @@ db.collection("notifikasi")
               targetJurusan: data.targetJurusan || [],
             });
           } else if (data.tipe === "REKOMENDASI_BARU") {
-            // Dikirim Android saat admin menambah rekomendasi dari aplikasi (dipakai mulai langkah 4)
-            await kirimNotifikasiRekomendasi(
-              data.judul || "Rekomendasi baru",
-              data.instansi || "admin",
-              data.refId || "",
-              data.targetAngkatan || [],
-            );
-          } else if (data.tipe === "REKOMENDASI_BARU") {
-            // Dikirim Android saat admin menambah rekomendasi dari aplikasi (dipakai mulai langkah 4)
-            await kirimNotifikasiRekomendasi(
-              data.judul || "Rekomendasi baru",
-              data.instansi || "admin",
-              data.refId || "",
-              data.targetAngkatan || [],
-            );
-          } else if (data.tipe === "REKOMENDASI_BARU") {
-            // Dikirim Android saat admin menambah rekomendasi dari aplikasi (dipakai mulai langkah 4)
+            // Dikirim Android saat admin menambah rekomendasi dari aplikasi
             await kirimNotifikasiRekomendasi(
               data.judul || "Rekomendasi baru",
               data.instansi || "admin",
@@ -1021,7 +1082,7 @@ db.collection("notifikasi")
             .doc(change.doc.id)
             .update({ sudahDikirim: true });
         } catch (error) {
-          console.error("❌ Gagal kirim notifikasi kuesioner:", error);
+          console.error(`❌ Gagal memproses permintaan notifikasi (${data.tipe}):`, error);
         }
       }
     }
