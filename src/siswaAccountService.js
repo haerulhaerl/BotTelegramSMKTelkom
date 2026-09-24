@@ -9,6 +9,12 @@
 
 const { admin, db } = require("./firebase");
 const { DEFAULT_PASSWORD } = require("./resetPasswordService");
+const {
+  DAFTAR_JURUSAN,
+  ANGKATAN_TERTUA,
+  bakukanJurusan,
+  angkatanValid,
+} = require("./dataSekolah");
 
 const EMAIL_DOMAIN = "tracerstudy.com";
 
@@ -30,6 +36,23 @@ async function createSingleSiswa({ nisn, nama, jurusan, angkatan, noTelepon = ""
   if (!nisn || !nama || !jurusan || !angkatan) {
     throw new Error("nisn, nama, jurusan, dan angkatan wajib diisi");
   }
+
+  // ─── 0. Validasi ulang jurusan & angkatan ───────────────────
+  // Jangan percaya begitu saja pada data dari pemanggil (Android/HTTP):
+  // ADMIN_API_KEY bisa diekstrak dari APK, jadi endpoint bisa dipanggil
+  // tanpa lewat CsvSiswaParser.kt. Dicek SEBELUM menyentuh Firestore/Auth.
+  const jurusanBaku = bakukanJurusan(jurusan);
+  if (!jurusanBaku) {
+    throw new Error(
+      `Jurusan "${jurusan}" tidak dikenali (pilihan: ${DAFTAR_JURUSAN.join(", ")})`,
+    );
+  }
+  if (!angkatanValid(angkatan)) {
+    throw new Error(
+      `Angkatan "${angkatan}" tidak valid: harus tahun lulus 4 digit, dari ${ANGKATAN_TERTUA} sampai tahun ini`,
+    );
+  }
+  const angkatanBaku = String(angkatan).trim();
 
   // ─── 1. Cek duplikat NISN di Firestore ──────────────────────
   // Dicek DULU sebelum bikin akun Auth, supaya tidak ada akun "yatim"
@@ -69,7 +92,7 @@ async function createSingleSiswa({ nisn, nama, jurusan, angkatan, noTelepon = ""
       nama,
       email,
       role: "SISWA",
-      jurusan,
+      jurusan: jurusanBaku,
       fotoUrl: "",
       createdAt: Date.now(),
     });
@@ -78,8 +101,8 @@ async function createSingleSiswa({ nisn, nama, jurusan, angkatan, noTelepon = ""
       uid,
       nisn,
       nama,
-      jurusan,
-      angkatan,
+      jurusan: jurusanBaku,
+      angkatan: angkatanBaku,
       noTelepon,
       keahlian: [],
       minat: [],

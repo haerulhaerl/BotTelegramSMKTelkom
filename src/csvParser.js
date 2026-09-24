@@ -4,6 +4,13 @@
 // PENTING: aturan validasi di sini harus SELALU identik dengan versi Kotlin.
 // Kalau salah satu diubah, yang lain wajib ikut diubah.
 
+const {
+  DAFTAR_JURUSAN,
+  ANGKATAN_TERTUA,
+  bakukanJurusan,
+  angkatanValid,
+} = require("./dataSekolah");
+
 const EXPECTED_COLUMN_COUNT = 5;
 const NISN_REGEX = /^\d{10}$/;
 const PHONE_REGEX = /^08\d{8,11}$/;
@@ -77,16 +84,33 @@ function validateRow(row) {
   if (!row.jurusan) {
     return { status: "ERROR", message: "Jurusan tidak boleh kosong" };
   }
-  if (!row.angkatan || isNaN(parseInt(row.angkatan, 10))) {
-    return { status: "ERROR", message: "Angkatan harus berupa angka (contoh: 2021)" };
+  const jurusanBaku = bakukanJurusan(row.jurusan);
+  if (!jurusanBaku) {
+    return {
+      status: "ERROR",
+      message: `Jurusan tidak dikenali (pilihan: ${DAFTAR_JURUSAN.join(", ")})`,
+    };
+  }
+  if (!row.angkatan) {
+    return { status: "ERROR", message: "Angkatan tidak boleh kosong" };
+  }
+  if (!angkatanValid(row.angkatan)) {
+    return {
+      status: "ERROR",
+      message: `Angkatan harus tahun lulus 4 digit, dari ${ANGKATAN_TERTUA} sampai tahun ini`,
+    };
   }
   if (!NISN_REGEX.test(row.nisn)) {
     return { status: "ERROR", message: "NISN harus persis 10 digit angka" };
   }
   if (!PHONE_REGEX.test(row.noTelepon)) {
-    return { status: "WARNING", message: "Format nomor telepon terlihat tidak biasa, cek kembali" };
+    return {
+      jurusan: jurusanBaku,
+      status: "WARNING",
+      message: "Format nomor telepon terlihat tidak biasa, cek kembali",
+    };
   }
-  return { status: "VALID", message: "" };
+  return { jurusan: jurusanBaku, status: "VALID", message: "" };
 }
 
 /** Cek NISN yang muncul lebih dari sekali DI DALAM FILE ini sendiri.
