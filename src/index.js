@@ -21,6 +21,10 @@ const { parseCsv } = require("./csvParser");
 const { bulkImportSiswa } = require("./siswaAccountService");
 const { kirimNotifikasiTertarget } = require("./notifikasiService");
 const {
+  daftarKuesionerUntukEkspor,
+  buatFileEkspor,
+} = require("./eksporKuesionerService");
+const {
   DAFTAR_JURUSAN,
   ANGKATAN_TERTUA,
   bakukanJurusan,
@@ -91,6 +95,7 @@ function tampilkanMenu(chatId) {
         [{ text: "🗑️ Hapus Rekomendasi" }],
         [{ text: "🔑 Reset Password Siswa" }],
         [{ text: "📥 Import Siswa (CSV)" }],
+        [{ text: "📊 Ekspor Hasil Kuesioner" }],
         [{ text: "🧪 Testing" }],
       ],
       resize_keyboard: true,
@@ -373,6 +378,11 @@ bot.on("message", async (msg) => {
 
   if (teks === "📥 Import Siswa (CSV)") {
     await mulaiImportSiswa(chatId);
+    return;
+  }
+
+  if (teks === "📊 Ekspor Hasil Kuesioner") {
+    await mulaiEksporKuesioner(chatId);
     return;
   }
 
@@ -762,6 +772,23 @@ bot.on("message", async (msg) => {
     return;
   }
 
+  // ─── ALUR EKSPOR HASIL KUESIONER ─────────────────────────
+  if (tahap === "pilih_ekspor") {
+    const nomorDipilih = parseInt(teks);
+    const daftar = sesi[chatId].data.daftarEkspor;
+    if (
+      isNaN(nomorDipilih) ||
+      nomorDipilih < 1 ||
+      nomorDipilih > daftar.length
+    ) {
+      bot.sendMessage(chatId, "⚠️ Nomor tidak valid. Coba lagi.");
+      return;
+    }
+
+    await kirimFileEkspor(chatId, daftar[nomorDipilih - 1]);
+    return;
+  }
+
   tampilkanMenu(chatId);
 });
 
@@ -989,6 +1016,81 @@ async function konfirmasiResetPassword(chatId) {
     bot.sendMessage(chatId, "❌ Gagal reset password. Coba lagi nanti.");
     tampilkanMenu(chatId);
   }
+}
+
+// ─── EKSPOR HASIL KUESIONER (.xlsx) ──────────────────────────
+async function mulaiEksporKuesioner(chatId) {
+  try {
+    bot.sendMessage(chatId, "⏳ Mengambil daftar kuesioner...");
+    const daftar = await daftarKuesionerUntukEkspor(10);
+
+    if (daftar.length === 0) {
+      bot.sendMessage(chatId, "📭 Belum ada kuesioner.");
+      tampilkanMenu(chatId);
+      return;
+    }
+
+    let pesan = "📊 *Pilih kuesioner yang ingin diekspor (10 terbaru):*\n\n";
+    daftar.forEach((k, i) => {
+      const keterangan = k.aktif ? "" : " (nonaktif)";
+      pesan += `${i + 1}. ${amankanMarkdown(k.judul)}${keterangan}\n   👥 ${k.jumlahResponden} responden\n\n`;
+    });
+    pesan += "Ketik nomor urut kuesioner:";
+
+    sesi[chatId] = { tahap: "pilih_ekspor", data: { daftarEkspor: daftar } };
+
+    bot.sendMessage(chatId, pesan, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        keyboard: [[{ text: "❌ Batal" }]],
+        resize_keyboard: true,
+      },
+    });
+  } catch (error) {
+    console.error("Error ambil daftar kuesioner:", error);
+    bot.sendMessage(chatId, "❌ Gagal mengambil daftar kuesioner.");
+    tampilkanMenu(chatId);
+  }
+}
+
+/** Buat file Excel lalu kirim sebagai dokumen. Teks tanpa Markdown,
+ *  supaya judul kuesioner berisi _ atau * tidak merusak pesan. */
+async function kirimFileEkspor(chatId, kuesioner) {
+  resetSesi(chatId); // selesai memilih; kalau gagal, admin mulai lagi dari menu
+  bot.sendMessage(chatId, `⏳ Menyiapkan file Excel "${kuesioner.judul}"...`);
+
+  try {
+    const hasil = await buatFileEkspor(kuesioner.id);
+    const r = hasil.ringkas;
+
+    const keterangan = [
+      `📊 ${r.judul}`,
+      `Responden: ${r.jumlahResponden}`,
+      `Siswa target: ${r.jumlahTarget} (sudah mengisi ${r.targetSudahMengisi}, tingkat respons ${r.tingkatRespons}%)`,
+      r.adaDiLuarDaftar ? "⚠️ Ada jawaban di luar daftar pilihan, lihat sheet Ringkasan." : "",
+      "🔒 File ini memuat nomor telepon siswa. Jangan dibagikan sembarangan.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    // Buffer dikirim langsung sebagai file; nama & tipe file wajib disebutkan
+    await bot.sendDocument(
+      chatId,
+      hasil.buffer,
+      { caption: keterangan },
+      {
+        filename: hasil.namaFile,
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    );
+    console.log(`📊 Ekspor "${r.judul}" terkirim (${r.jumlahResponden} responden)`);
+  } catch (error) {
+    console.error("❌ Gagal ekspor kuesioner:", error);
+    bot.sendMessage(chatId, `❌ Gagal membuat file ekspor: ${error.message}`);
+  }
+
+  tampilkanMenu(chatId);
 }
 
 // ─── IMPORT SISWA VIA CSV 

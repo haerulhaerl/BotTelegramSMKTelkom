@@ -146,4 +146,6 @@ async function kirimPushKeSiswa(uidList, judul, pesan, tipe) {
   return terkirim;
 }
 
-module.exports = { kirimNotifikasiTertarget };
+// siswaCocok & normalisasiList juga dipakai eksporKuesionerService.js,
+// supaya aturan "siswa target" di backend hanya ada di satu tempat.
+module.exports = { kirimNotifikasiTertarget, siswaCocok, normalisasiList };
