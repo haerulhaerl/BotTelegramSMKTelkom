@@ -41,6 +41,35 @@ bot.on("polling_error", (error) => {
 });
 
 
+// ─── JARING PENGAMAN PENGIRIMAN PESAN ────────────────────────
+// Kalau Telegram menolak format Markdown (mis. judul berisi "_" atau "*"
+// tanpa pasangan), pesan dikirim ulang sebagai teks biasa. Tanpa ini,
+// pesan hilang diam-diam dan admin tidak mendapat balasan apa pun.
+const kirimPesanAsli = bot.sendMessage.bind(bot);
+bot.sendMessage = (chatId, teks, opsi = {}) =>
+  kirimPesanAsli(chatId, teks, opsi).catch((error) => {
+    const pesanError = error.message || "";
+    const formatDitolak =
+      opsi.parse_mode && /can't parse entities/i.test(pesanError);
+
+    if (formatDitolak) {
+      console.warn(
+        `⚠️ Format Markdown ditolak Telegram, dikirim ulang sebagai teks biasa (${pesanError})`,
+      );
+      const { parse_mode, ...opsiTanpaFormat } = opsi;
+      return kirimPesanAsli(chatId, teks, opsiTanpaFormat).catch((e) =>
+        console.error("❌ Gagal kirim pesan (teks biasa):", e.message),
+      );
+    }
+    console.error("❌ Gagal kirim pesan:", pesanError);
+  });
+
+// Jaring terakhir untuk error async lain yang lolos (Promise bawaan Node).
+// Tanpa ini, Node.js 20 menghentikan seluruh proses (bot + server Express).
+process.on("unhandledRejection", (alasan) => {
+  console.error("❌ Unhandled rejection (bot tetap berjalan):", alasan);
+});
+
 // ─── STATE PERCAKAPAN ────────────────────────────────────────
 const sesi = {};
 
@@ -739,19 +768,22 @@ bot.on("message", async (msg) => {
 // ─── TAMPILKAN KONFIRMASI ─────────────────────────────────────
 async function lanjutKeKonfirmasi(chatId) {
   const d = sesi[chatId].data;
+  // Teks bebas dari admin (judul, instansi, lokasi, deskripsi, keahlian, link)
+  // di-escape supaya karakter seperti _ atau * tidak merusak format Markdown.
+  // Jenis, target jurusan, dan target angkatan berasal dari pilihan tetap.
   const ringkasan = `
 ✅ *Konfirmasi Data Rekomendasi*
 
-📝 *Judul:* ${d.judul}
-🏢 *Instansi:* ${d.instansi}
+📝 *Judul:* ${amankanMarkdown(d.judul)}
+🏢 *Instansi:* ${amankanMarkdown(d.instansi)}
 📌 *Jenis:* ${d.jenis}
-📍 *Lokasi:* ${d.lokasi || "-"}
+📍 *Lokasi:* ${amankanMarkdown(d.lokasi) || "-"}
 🗺️ *Pin Peta:* ${d.latitude != null ? `${d.latitude}, ${d.longitude}` : "Tidak ada"}
-📄 *Deskripsi:* ${d.deskripsi || "-"}
+📄 *Deskripsi:* ${amankanMarkdown(d.deskripsi) || "-"}
 🎓 *Target Jurusan:* ${d.targetJurusan && d.targetJurusan.length > 0 ? d.targetJurusan.join(", ") : "Semua"}
 📅 *Target Angkatan:* ${d.targetAngkatan && d.targetAngkatan.length > 0 ? d.targetAngkatan.join(", ") : "Semua"}
-💡 *Target Keahlian:* ${d.targetKeahlian.length > 0 ? d.targetKeahlian.join(", ") : "-"}
-🔗 *Link:* ${d.link || "-"}
+💡 *Target Keahlian:* ${d.targetKeahlian.length > 0 ? amankanMarkdown(d.targetKeahlian.join(", ")) : "-"}
+🔗 *Link:* ${amankanMarkdown(d.link) || "-"}
 🖼️ *Foto:* ${d.imageUrl ? "Ada ✅" : "Tidak ada"}
 
 Simpan rekomendasi ini?`;
@@ -800,7 +832,7 @@ async function simpanRekomendasi(chatId) {
     resetSesi(chatId);
     bot.sendMessage(
       chatId,
-      `✅ *Rekomendasi berhasil disimpan!*\n\n"${d.judul}" dari ${d.instansi} sudah muncul di aplikasi siswa dan notifikasi telah dikirim. 🔔`,
+      `✅ *Rekomendasi berhasil disimpan!*\n\n"${amankanMarkdown(d.judul)}" dari ${amankanMarkdown(d.instansi)} sudah muncul di aplikasi siswa dan notifikasi telah dikirim. 🔔`,
       { parse_mode: "Markdown" },
     );
     tampilkanMenu(chatId);
