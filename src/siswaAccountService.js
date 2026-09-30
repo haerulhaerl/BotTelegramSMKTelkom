@@ -17,6 +17,7 @@ const {
 } = require("./dataSekolah");
 
 const EMAIL_DOMAIN = "tracerstudy.com";
+const NISN_REGEX = /^\d{10}$/; // sama dengan csvParser.js dan CsvSiswaParser.kt
 
 /** Email dummy dihasilkan dari NISN, bukan diinput manual.
  *  Deterministik: NISN yang sama SELALU menghasilkan email yang sama. */
@@ -41,6 +42,10 @@ async function createSingleSiswa({ nisn, nama, jurusan, angkatan, noTelepon = ""
   // Jangan percaya begitu saja pada data dari pemanggil (Android/HTTP):
   // ADMIN_API_KEY bisa diekstrak dari APK, jadi endpoint bisa dipanggil
   // tanpa lewat CsvSiswaParser.kt. Dicek SEBELUM menyentuh Firestore/Auth.
+  // NISN juga dicek formatnya, karena email login dibuat dari NISN.
+  if (!NISN_REGEX.test(String(nisn))) {
+    throw new Error(`NISN "${nisn}" tidak valid: harus persis 10 digit angka`);
+  }
   const jurusanBaku = bakukanJurusan(jurusan);
   if (!jurusanBaku) {
     throw new Error(

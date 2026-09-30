@@ -24,6 +24,7 @@ const {
   daftarKuesionerUntukEkspor,
   buatFileEkspor,
 } = require("./eksporKuesionerService");
+const { mulaiPantauPermintaanAdmin } = require("./permintaanAdminService");
 const {
   DAFTAR_JURUSAN,
   ANGKATAN_TERTUA,
@@ -1286,6 +1287,9 @@ db.collection("notifikasi")
       }
     }
   });
+
+// Permintaan admin dari aplikasi Android (Tambah Siswa, Import CSV, Reset Password) lewat Firestore
+mulaiPantauPermintaanAdmin();
 
 console.log("🤖 Bot Tracer Study berjalan...");
 
