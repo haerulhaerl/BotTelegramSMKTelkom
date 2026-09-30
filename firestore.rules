@@ -1,0 +1,114 @@
+rules_version = '2';
+
+// Firestore Rules TracerStudy — DRAF (30 Sep 2026)
+//
+// Prinsip:
+//   - Tidak ada lagi blok `match /{document=**}` yang membuka semua dokumen.
+//   - Setiap koleksi diatur sendiri: siapa boleh baca, buat, ubah, hapus.
+//   - Bot memakai Firebase Admin SDK, yang TIDAK terikat rules ini.
+//     Jadi semua yang dikerjakan bot (buat akun, notifikasi per siswa,
+//     hasil permintaanAdmin, nisnLookup) tetap berjalan.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Fungsi bantu ─────────────────────────────────────────
+    function sudahLogin() {
+      return request.auth != null;
+    }
+
+    function diriSendiri(uid) {
+      return sudahLogin() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return sudahLogin() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "ADMIN";
+    }
+
+    // Perubahan hanya boleh menyentuh field di daftar ini
+    function hanyaMengubah(daftarField) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(daftarField);
+    }
+
+    // ─── Lookup NISN -> email (dibaca SEBELUM login) ─────────
+    match /nisnLookup/{nisn} {
+      allow get: if true;
+      allow list, write: if false; // ditulis bot (Admin SDK)
+    }
+
+    // ─── Akun ─────────────────────────────────────────────────
+    match /users/{uid} {
+      allow get: if diriSendiri(uid) || isAdmin();
+      allow list: if isAdmin();
+      // Pemilik hanya boleh mengubah token push-nya sendiri (termasuk menghapusnya
+      // saat logout). Role, nama, dan email tidak bisa diubah dari aplikasi.
+      allow update: if diriSendiri(uid) && hanyaMengubah(['fcmToken']);
+      allow create, delete: if false; // dibuat bot (Admin SDK)
+    }
+
+    match /siswaProfile/{uid} {
+      allow get: if diriSendiri(uid) || isAdmin();
+      allow list: if isAdmin();
+      // Siswa hanya boleh memperbarui status alumni dan penanda kuesioner miliknya.
+      // NISN, nama, jurusan, dan angkatan tidak bisa diubah dari aplikasi.
+      allow update: if diriSendiri(uid) &&
+        hanyaMengubah(['status', 'instansiSaatIni', 'statusDiperbaruiPada', 'sudahIsiKuesioner']);
+      allow create, delete: if false; // dibuat bot (Admin SDK)
+    }
+
+    // ─── Kuesioner ────────────────────────────────────────────
+    match /kuesioner/{id} {
+      allow read: if sudahLogin();
+      allow write: if isAdmin();
+    }
+
+    match /kuesionerResponses/{id} {
+      // Siswa hanya melihat jawabannya sendiri (query-nya sudah memfilter siswaUid)
+      allow read: if isAdmin() ||
+        (sudahLogin() && resource.data.siswaUid == request.auth.uid);
+      allow create: if sudahLogin() && request.resource.data.siswaUid == request.auth.uid;
+      allow update, delete: if false; // fitur ubah jawaban belum ada
+    }
+
+    // ─── Rekomendasi ──────────────────────────────────────────
+    match /rekomendasi/{id} {
+      allow read: if sudahLogin();
+      allow write: if isAdmin();
+    }
+
+    // ─── Notifikasi ───────────────────────────────────────────
+    // Antrean permintaan notifikasi ke bot (dibuat admin dari aplikasi)
+    match /notifikasi/{id} {
+      allow create: if isAdmin();
+      allow read, update, delete: if false; // diproses bot (Admin SDK)
+    }
+
+    // Notifikasi milik tiap siswa (query-nya sudah memfilter targetUid)
+    match /notifikasi_siswa/{id} {
+      allow read: if sudahLogin() && resource.data.targetUid == request.auth.uid;
+      allow update: if sudahLogin() && resource.data.targetUid == request.auth.uid &&
+        hanyaMengubah(['sudahDibaca']);
+      allow delete: if sudahLogin() && resource.data.targetUid == request.auth.uid;
+      // Notifikasi "password diubah" ditulis aplikasi untuk pemilik akun itu sendiri
+      allow create: if sudahLogin() && request.resource.data.targetUid == request.auth.uid;
+    }
+
+    // ─── Permintaan admin dari aplikasi ke bot ────────────────
+    match /permintaanAdmin/{id} {
+      // Admin hanya boleh mengirim atas nama dirinya sendiri
+      allow create: if isAdmin() &&
+        request.resource.data.dimintaOleh == request.auth.uid &&
+        request.resource.data.status == "MENUNGGU";
+      allow get: if isAdmin() && resource.data.dimintaOleh == request.auth.uid;
+      allow list: if false;
+      // Aplikasi hanya boleh membatalkan permintaan yang belum diambil bot
+      allow update: if isAdmin() &&
+        resource.data.dimintaOleh == request.auth.uid &&
+        resource.data.status == "MENUNGGU" &&
+        request.resource.data.status == "DIBATALKAN" &&
+        hanyaMengubah(['status']);
+      allow delete: if isAdmin() && resource.data.dimintaOleh == request.auth.uid;
+    }
+  }
+}
