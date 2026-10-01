@@ -50,14 +50,23 @@ function bakukanJurusan(nilai) {
   return PEMETAAN[ratakan(teks)] || null;
 }
 
-/** Angkatan tertinggi = tahun ini (tidak ada tahun lulus di masa depan). */
+/**
+ * Angkatan tertinggi = tahun lulus kelas XII yang sedang berjalan.
+ * Tahun ajaran baru dimulai Juli, jadi:
+ * - Juli–Desember: tahun ini + 1 (mis. Oktober 2026 → 2027)
+ * - Januari–Juni: tahun ini (kelas XII lulus tahun ini)
+ * HARUS sama dengan DataSekolah.angkatanTertinggi() (Android).
+ */
 function angkatanTertinggi() {
-  return new Date().getFullYear();
+  const now = new Date();
+  const tahunIni = now.getFullYear();
+  const BULAN_JULI = 6; // getMonth() dimulai dari 0 (Januari = 0), sama seperti Calendar.MONTH di Android
+  return now.getMonth() >= BULAN_JULI ? tahunIni + 1 : tahunIni;
 }
 
 /**
  * Sama dengan DataSekolah.daftarAngkatan() (Android):
- * dari tahun ini turun sampai ANGKATAN_TERTUA, sebagai teks.
+ * dari angkatan tertinggi (kelas XII yang sedang berjalan) turun sampai ANGKATAN_TERTUA, sebagai teks.
  */
 function daftarAngkatan() {
   const hasil = [];
