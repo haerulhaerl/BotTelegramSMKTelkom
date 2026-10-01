@@ -68,7 +68,13 @@ service cloud.firestore {
       allow read: if isAdmin() ||
         (sudahLogin() && resource.data.siswaUid == request.auth.uid);
       allow create: if sudahLogin() && request.resource.data.siswaUid == request.auth.uid;
-      allow update, delete: if false; // fitur ubah jawaban belum ada
+      // Siswa boleh mengubah jawabannya sendiri: hanya isi jawaban dan waktu ubah,
+      // dan hanya selama kuesioner masih aktif. Menghapus jawaban tetap tidak boleh.
+      allow update: if sudahLogin() &&
+        resource.data.siswaUid == request.auth.uid &&
+        hanyaMengubah(['jawaban', 'diperbaruiPada']) &&
+        get(/databases/$(database)/documents/kuesioner/$(resource.data.kuesionerId)).data.aktif == true;
+      allow delete: if false;
     }
 
     // ─── Rekomendasi ──────────────────────────────────────────
