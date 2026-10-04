@@ -9,6 +9,7 @@ const {
   ANGKATAN_TERTUA,
   bakukanJurusan,
   angkatanValid,
+  daftarAngkatan,
 } = require("./dataSekolah");
 
 const EXPECTED_COLUMN_COUNT = 5;
@@ -97,13 +98,15 @@ function validateRow(row) {
   if (!angkatanValid(row.angkatan)) {
     return {
       status: "ERROR",
-      message: `Angkatan harus tahun lulus 4 digit, dari ${ANGKATAN_TERTUA} sampai tahun ini`,
+      // daftarAngkatan() dimulai dari angkatan tertinggi, jadi elemen pertamanya adalah batas atas
+      message: `Angkatan harus tahun lulus 4 digit, dari ${ANGKATAN_TERTUA} sampai ${daftarAngkatan()[0]}`,
     };
   }
   if (!NISN_REGEX.test(row.nisn)) {
     return { status: "ERROR", message: "NISN harus persis 10 digit angka" };
   }
-  if (!PHONE_REGEX.test(row.noTelepon)) {
+  // Nomor telepon opsional: kosong tidak diberi peringatan, yang diisi tetap dicek formatnya
+  if (row.noTelepon && !PHONE_REGEX.test(row.noTelepon)) {
     return {
       jurusan: jurusanBaku,
       status: "WARNING",
@@ -123,7 +126,8 @@ function markInFileDuplicates(rows) {
   });
 
   return rows.map((row) => {
-    if (hitung[row.nisn] > 1 && row.status === "VALID") {
+    // Baris WARNING tetap ikut diimport, jadi NISN gandanya harus ditandai juga
+    if (hitung[row.nisn] > 1 && row.status !== "ERROR") {
       return {
         ...row,
         status: "ERROR",
