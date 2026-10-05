@@ -110,7 +110,7 @@ async function kirimNotifikasiRekomendasi(judul, instansi, refId = "", targetAng
   try {
     await kirimNotifikasiTertarget({
       tipe: "REKOMENDASI_BARU",
-      judul: "📢 Rekomendasi Baru!",
+      judul: "Rekomendasi Baru!",
       pesan: `${judul} dari ${instansi} — Cek sekarang!`,
       refId,
       targetAngkatan,
@@ -734,32 +734,43 @@ bot.on("message", async (msg) => {
   }
 
   // ─── ALUR RESET PASSWORD SISWA ───────────────────────────
-  if (tahap === "pilih_reset_password") {
-    const nomorDipilih = parseInt(teks);
-    const daftar = sesi[chatId].data.daftarSiswaReset;
-    if (
-      isNaN(nomorDipilih) ||
-      nomorDipilih < 1 ||
-      nomorDipilih > daftar.length
-    ) {
-      bot.sendMessage(chatId, "⚠️ Nomor tidak valid. Coba lagi.");
-      return;
+  if (tahap === "input_nisn_reset") {
+    const nisn = teks.trim();
+    if (!/^\d{10}$/.test(nisn)) {
+      bot.sendMessage(chatId, "⚠️ NISN harus 10 digit angka. Coba lagi.");
+      return; // tetap di tahap ini
     }
 
-    const dipilih = daftar[nomorDipilih - 1];
-    sesi[chatId].data.siswaDipilihReset = dipilih;
-    sesi[chatId].tahap = "konfirmasi_reset_password";
-    bot.sendMessage(
-      chatId,
-      `🔑 Yakin ingin reset password:\n${amankanMarkdown(dipilih.nama)} (${amankanMarkdown(dipilih.email)})?\n\nPassword akan diubah menjadi: \`${DEFAULT_PASSWORD}\``,
-      {
-        parse_mode: "Markdown",
-        reply_markup: {
-          keyboard: [[{ text: "✅ Ya, Reset" }, { text: "❌ Batal" }]],
-          resize_keyboard: true,
+    try {
+      // nisnLookup: peta NISN -> { email, uid }, sama dengan yang dipakai saat siswa login
+      const lookup = await db.collection("nisnLookup").doc(nisn).get();
+      if (!lookup.exists) {
+        bot.sendMessage(chatId, `⚠️ NISN ${nisn} tidak terdaftar. Coba lagi.`);
+        return; // tetap di tahap ini
+      }
+      const { uid, email } = lookup.data();
+      const userDoc = await db.collection("users").doc(uid).get();
+      const nama = (userDoc.exists && userDoc.data().nama) || "-";
+
+      sesi[chatId].data.siswaDipilihReset = { uid, nama, email };
+      sesi[chatId].tahap = "konfirmasi_reset_password";
+      bot.sendMessage(
+        chatId,
+        `🔑 Yakin ingin reset password:\n${amankanMarkdown(nama)} (NISN ${nisn})?\n\nPassword akan diubah menjadi: \`${DEFAULT_PASSWORD}\``,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            keyboard: [[{ text: "✅ Ya, Reset" }, { text: "❌ Batal" }]],
+            resize_keyboard: true,
+          },
         },
-      },
-    );
+      );
+    } catch (error) {
+      console.error("Error cari siswa untuk reset password:", error);
+      bot.sendMessage(chatId, "❌ Gagal mencari data siswa. Coba lagi nanti.");
+      resetSesi(chatId);
+      tampilkanMenu(chatId);
+    }
     return;
   }
 
@@ -962,44 +973,18 @@ async function hapusRekomendasi(chatId) {
 }
 
 // ─── RESET PASSWORD SISWA ─────────────────────────────────────
+// Admin mengetik NISN, bukan memilih dari daftar: daftar semua siswa bisa
+// melebihi batas 4.096 karakter per pesan Telegram saat datanya ratusan.
 async function mulaiResetPasswordSiswa(chatId) {
-  try {
-    bot.sendMessage(chatId, "⏳ Mengambil data siswa...");
-    const snapshot = await db
-      .collection("users")
-      .where("role", "==", "SISWA")
-      .get();
-
-    if (snapshot.empty) {
-      bot.sendMessage(chatId, "📭 Belum ada siswa terdaftar.");
-      tampilkanMenu(chatId);
-      return;
-    }
-
-    const daftar = [];
-    let pesan = "🔑 *Pilih nomor siswa yang password-nya ingin direset:*\n\n";
-
-    snapshot.forEach((doc) => {
-      const u = doc.data();
-      daftar.push({ uid: doc.id, nama: u.nama || "-", email: u.email || "-" });
-      pesan += `${daftar.length}. ${amankanMarkdown(u.nama || "-")}\n   📧 ${amankanMarkdown(u.email || "-")}\n\n`;
-    });
-
-    pesan += "Ketik nomor urut siswa:";
-    sesi[chatId] = { tahap: "pilih_reset_password", data: { daftarSiswaReset: daftar } };
-
-    bot.sendMessage(chatId, pesan, {
-      parse_mode: "Markdown",
-      reply_markup: {
-        keyboard: [[{ text: "❌ Batal" }]],
-        resize_keyboard: true,
-      },
-    });
-  } catch (error) {
-    console.error("Error ambil daftar siswa:", error);
-    bot.sendMessage(chatId, "❌ Gagal mengambil data siswa.");
-    tampilkanMenu(chatId);
-  }
+  resetSesi(chatId);
+  sesi[chatId].tahap = "input_nisn_reset";
+  bot.sendMessage(chatId, "🔑 *Reset Password Siswa*\n\nKetik *NISN* siswa (10 digit):", {
+    parse_mode: "Markdown",
+    reply_markup: {
+      keyboard: [[{ text: "❌ Batal" }]],
+      resize_keyboard: true,
+    },
+  });
 }
 
 async function konfirmasiResetPassword(chatId) {
@@ -1262,7 +1247,7 @@ db.collection("notifikasi")
           if (data.tipe === "KUESIONER_BARU") {
             await kirimNotifikasiTertarget({
               tipe: data.tipe,
-              judul: "📝 Kuesioner Baru!",
+              judul: "Kuesioner Baru!",
               pesan: `Admin menambahkan kuesioner baru: "${data.judul}". Isi sekarang!`,
               refId: "",
               // Field ini dikirim Android mulai Fase B.
