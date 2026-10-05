@@ -13,7 +13,7 @@ async function resetPasswordSiswa(uid, nama = "") {
   try {
     await db.collection("notifikasi_siswa").add({
       tipe: "PASSWORD_DIRESET",
-      judul: "🔑 Password Anda Direset",
+      judul: "Password Anda Direset",
       pesan: "Password akun Anda telah direset oleh admin. Silakan hubungi admin untuk mengetahui password baru Anda, lalu segera ganti di halaman profil.",
       refId: "",
       targetUid: uid, // penting: hanya tampil untuk siswa ini
@@ -35,7 +35,7 @@ async function resetPasswordSiswa(uid, nama = "") {
       await admin.messaging().send({
         token: fcmToken,
         notification: {
-          title: "🔑 Password Anda Direset",
+          title: "Password Anda Direset",
           body: "Password akun Anda telah direset oleh admin. Hubungi admin untuk password baru.",
         },
         data: { TIPE_NOTIFIKASI: "PASSWORD_DIRESET" },
