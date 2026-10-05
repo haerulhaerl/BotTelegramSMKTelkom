@@ -30,6 +30,7 @@ const {
   ANGKATAN_TERTUA,
   bakukanJurusan,
   angkatanValid,
+  daftarAngkatan,
 } = require("./dataSekolah");
 
 // ─── ERROR POLLING TELEGRAM ──────────────────────────────────
@@ -604,7 +605,7 @@ bot.on("message", async (msg) => {
       if (daftar.length === 0 || tidakValid.length > 0) {
         bot.sendMessage(
           chatId,
-          `⚠️ Angkatan harus tahun lulus 4 digit, dari ${ANGKATAN_TERTUA} sampai tahun ini, contoh \`2024\`.\nTidak valid: ${amankanMarkdown(tidakValid.join(", ") || teks)}\n\nCoba lagi, atau ketik \`-\` untuk semua angkatan.`,
+          `⚠️ Angkatan harus tahun lulus 4 digit, dari ${ANGKATAN_TERTUA} sampai ${daftarAngkatan()[0]}, contoh \`2024\`.\nTidak valid: ${amankanMarkdown(tidakValid.join(", ") || teks)}\n\nCoba lagi, atau ketik \`-\` untuk semua angkatan.`,
           { parse_mode: "Markdown" },
         );
         return; // tetap di tahap ini, admin mengetik ulang
@@ -709,7 +710,7 @@ bot.on("message", async (msg) => {
     sesi[chatId].tahap = "konfirmasi_hapus";
     bot.sendMessage(
       chatId,
-      `🗑️ Yakin ingin menghapus:\n*"${dipilih.judul}"* - ${dipilih.instansi}?`,
+      `🗑️ Yakin ingin menghapus:\n"${amankanMarkdown(dipilih.judul)}" - ${amankanMarkdown(dipilih.instansi)}?`,
       {
         parse_mode: "Markdown",
         reply_markup: {
@@ -750,7 +751,7 @@ bot.on("message", async (msg) => {
     sesi[chatId].tahap = "konfirmasi_reset_password";
     bot.sendMessage(
       chatId,
-      `🔑 Yakin ingin reset password:\n*${dipilih.nama}* (${dipilih.email})?\n\nPassword akan diubah menjadi: \`${DEFAULT_PASSWORD}\``,
+      `🔑 Yakin ingin reset password:\n${amankanMarkdown(dipilih.nama)} (${amankanMarkdown(dipilih.email)})?\n\nPassword akan diubah menjadi: \`${DEFAULT_PASSWORD}\``,
       {
         parse_mode: "Markdown",
         reply_markup: {
@@ -890,7 +891,7 @@ async function tampilkanDaftarRekomendasi(chatId) {
     let pesan = "📋 *Daftar Rekomendasi (10 terbaru):*\n\n";
     snapshot.docs.forEach((doc, index) => {
       const r = doc.data();
-      pesan += `${index + 1}. *${r.judul}*\n   🏢 ${r.instansi} | 📌 ${r.jenis} ${r.imageUrl ? "🖼️" : ""}\n\n`;
+      pesan += `${index + 1}. ${amankanMarkdown(r.judul)}\n   🏢 ${amankanMarkdown(r.instansi)} | 📌 ${r.jenis} ${r.imageUrl ? "🖼️" : ""}\n\n`;
     });
 
     bot.sendMessage(chatId, pesan, { parse_mode: "Markdown" });
@@ -924,7 +925,7 @@ async function mulaiHapusRekomendasi(chatId) {
     snapshot.forEach((doc) => {
       const r = doc.data();
       daftar.push({ id: doc.id, judul: r.judul, instansi: r.instansi });
-      pesan += `${daftar.length}. *${r.judul}*\n   🏢 ${r.instansi}\n\n`;
+      pesan += `${daftar.length}. ${amankanMarkdown(r.judul)}\n   🏢 ${amankanMarkdown(r.instansi)}\n\n`;
     });
 
     pesan += "Ketik nomor urut rekomendasi:";
@@ -949,7 +950,7 @@ async function hapusRekomendasi(chatId) {
     const { id, judul } = sesi[chatId].data.hapusDipilih;
     await db.collection("rekomendasi").doc(id).delete();
     resetSesi(chatId);
-    bot.sendMessage(chatId, `✅ *"${judul}"* berhasil dihapus.`, {
+    bot.sendMessage(chatId, `✅ "${amankanMarkdown(judul)}" berhasil dihapus.`, {
       parse_mode: "Markdown",
     });
     tampilkanMenu(chatId);
@@ -981,7 +982,7 @@ async function mulaiResetPasswordSiswa(chatId) {
     snapshot.forEach((doc) => {
       const u = doc.data();
       daftar.push({ uid: doc.id, nama: u.nama || "-", email: u.email || "-" });
-      pesan += `${daftar.length}. *${u.nama || "-"}*\n   📧 ${u.email || "-"}\n\n`;
+      pesan += `${daftar.length}. ${amankanMarkdown(u.nama || "-")}\n   📧 ${amankanMarkdown(u.email || "-")}\n\n`;
     });
 
     pesan += "Ketik nomor urut siswa:";
@@ -1008,7 +1009,7 @@ async function konfirmasiResetPassword(chatId) {
     resetSesi(chatId);
     bot.sendMessage(
       chatId,
-      `✅ Password *${nama}* berhasil direset menjadi \`${DEFAULT_PASSWORD}\`.`,
+      `✅ Password ${amankanMarkdown(nama)} berhasil direset menjadi \`${DEFAULT_PASSWORD}\`.`,
       { parse_mode: "Markdown" },
     );
     tampilkanMenu(chatId);
@@ -1099,7 +1100,9 @@ async function kirimFileEkspor(chatId, kuesioner) {
 /** Amankan teks dinamis (nama file, nama siswa, pesan error) sebelum
  *  dimasukkan ke pesan ber-Markdown. Tanpa ini, karakter seperti _ atau *
  *  di dalam data akan dibaca Telegram sebagai perintah format dan
- *  membuat seluruh pesan ditolak (error "can't parse entities"). */
+ *  membuat seluruh pesan ditolak (error "can't parse entities").
+ *  Pakai di LUAR tanda format: Telegram tidak membaca escape di dalam *tebal*
+ *  atau _miring_, jadi data dinamis jangan dibungkus tanda bintang. */
 function amankanMarkdown(teks) {
   if (teks === null || teks === undefined) return "";
   return String(teks).replace(/([_*`\[\]])/g, "\\$1");
