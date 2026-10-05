@@ -52,7 +52,7 @@ bot.on("polling_error", (error) => {
 // tanpa pasangan), pesan dikirim ulang sebagai teks biasa. Tanpa ini,
 // pesan hilang diam-diam dan admin tidak mendapat balasan apa pun.
 const kirimPesanAsli = bot.sendMessage.bind(bot);
-bot.sendMessage = (chatId, teks, opsi = {}) =>
+const kirimDenganPengaman = (chatId, teks, opsi = {}) =>
   kirimPesanAsli(chatId, teks, opsi).catch((error) => {
     const pesanError = error.message || "";
     const formatDitolak =
@@ -69,6 +69,22 @@ bot.sendMessage = (chatId, teks, opsi = {}) =>
     }
     console.error("❌ Gagal kirim pesan:", pesanError);
   });
+
+// ─── ANTREAN PESAN PER CHAT ──────────────────────────────────
+// Pesan ke chat yang sama dikirim bergiliran: pesan berikutnya baru
+// dikirim setelah pesan sebelumnya selesai. Tanpa ini, dua pesan yang
+// dikirim berdekatan (mis. "Dibatalkan." lalu Menu Utama) bisa tiba
+// dengan urutan tertukar.
+const antreanPesan = {};
+bot.sendMessage = (chatId, teks, opsi = {}) => {
+  const giliranSebelumnya = antreanPesan[chatId] || Promise.resolve();
+  const giliranIni = giliranSebelumnya.then(() =>
+    kirimDenganPengaman(chatId, teks, opsi),
+  );
+  // Kalau satu giliran gagal, antrean tetap jalan untuk pesan berikutnya
+  antreanPesan[chatId] = giliranIni.catch(() => {});
+  return giliranIni;
+};
 
 // Jaring terakhir untuk error async lain yang lolos (Promise bawaan Node).
 // Tanpa ini, Node.js 20 menghentikan seluruh proses (bot + server Express).
